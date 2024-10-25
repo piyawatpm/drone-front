@@ -48,10 +48,18 @@ interface PolygonData {
   paths: google.maps.LatLngLiteral[];
   completed: boolean;
   obstructors: ObstructorData[];
+  windingPath?: google.maps.LatLngLiteral[];
 }
 export default function CustomGoogleMap() {
+  const { isLoaded } = useJsApiLoader({
+    id: "google-map-script",
+    googleMapsApiKey: process.env.NEXT_PUBLIC_GOOGLE_API_KEY as string,
+    libraries,
+  });
+
   const [map, setMap] = useState<google.maps.Map | null>(null);
   const [polygons, setPolygons] = useState<PolygonData[]>([]);
+  
   const [editingPolygonId, setEditingPolygonId] = useState<string | null>(null);
   const [selectedPolygonId, setSelectedPolygonId] = useState<string | null>(
     null
@@ -59,10 +67,16 @@ export default function CustomGoogleMap() {
   const [editingObstructorId, setEditingObstructorId] = useState<string | null>(
     null
   );
-  const [windingPaths, setWindingPaths] = useState<{
-    [key: string]: google.maps.LatLngLiteral[];
-  }>({});
-  console.log("windingPaths", windingPaths);
+
+  const [showWindingPath, setShowWindingPath] = useState<string | null>(null);
+
+  const onLoad = useCallback((map: google.maps.Map) => {
+    map.setZoom(17);
+    setMap(map);
+  }, []);
+
+  const onUnmount = useCallback(() => setMap(null), []);
+
   const handleAddObstructor = (polygonId: string) => {
     const newObstructor: ObstructorData = {
       id: Date.now().toString(),
@@ -90,18 +104,6 @@ export default function CustomGoogleMap() {
       setSelectedPolygonId(null);
     }
   };
-  const { isLoaded } = useJsApiLoader({
-    id: "google-map-script",
-    googleMapsApiKey: process.env.NEXT_PUBLIC_GOOGLE_API_KEY as string,
-    libraries,
-  });
-
-  const onLoad = useCallback((map: google.maps.Map) => {
-    map.setZoom(17);
-    setMap(map);
-  }, []);
-
-  const onUnmount = useCallback(() => setMap(null), []);
 
   const handleAddPolygon = () => {
     const newPolygon: PolygonData = {
@@ -124,16 +126,7 @@ export default function CustomGoogleMap() {
       setPolygons(
         polygons.map((polygon) => {
           if (polygon.id === editingPolygonId) {
-            const updatedPolygon = { ...polygon, completed: true };
-            const windingPath = generateWindingPath(
-              updatedPolygon.paths,
-              0.00001 // Smaller spacing value for more detail
-            );
-            setWindingPaths({
-              ...windingPaths,
-              [updatedPolygon.id]: windingPath,
-            });
-            return updatedPolygon;
+            return { ...polygon, completed: true };
           }
           return polygon;
         })
@@ -245,7 +238,18 @@ export default function CustomGoogleMap() {
 
     return windingPath;
   };
-
+  const handleCreateWindingPath = (polygonId: string) => {
+    setPolygons(
+      polygons.map((polygon) => {
+        if (polygon.id === polygonId && !polygon.windingPath) {
+          const windingPath = generateWindingPath(polygon.paths, 0.00001);
+          return { ...polygon, windingPath };
+        }
+        return polygon;
+      })
+    );
+    setShowWindingPath(polygonId);
+  };
   const findIntersections = (
     polygon: google.maps.LatLngLiteral[],
     line: google.maps.LatLngLiteral[]
@@ -365,9 +369,9 @@ export default function CustomGoogleMap() {
                   }}
                 />
               ))}
-              {windingPaths[polygon.id] && (
+              {showWindingPath === polygon.id && polygon.windingPath && (
                 <Polyline
-                  path={windingPaths[polygon.id]}
+                  path={polygon.windingPath}
                   options={{
                     strokeColor: "#FF0000",
                     strokeOpacity: 1,
@@ -435,6 +439,7 @@ export default function CustomGoogleMap() {
         onAddObstructor={handleAddObstructor}
         editingObstructorId={editingObstructorId}
         setEditingObstructorId={setEditingObstructorId}
+        onCreateWindingPath={handleCreateWindingPath}
       />
     </div>
   );

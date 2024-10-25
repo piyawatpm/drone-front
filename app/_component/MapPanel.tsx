@@ -30,6 +30,7 @@ interface MapPanelProps {
   onAddObstructor: (polygonId: string) => void;
   editingObstructorId: string | null;
   setEditingObstructorId: (id: string | null) => void;
+  onCreateWindingPath: (polygonId: string) => void;
 }
 
 const MapPanel: React.FC<MapPanelProps> = ({
@@ -44,6 +45,7 @@ const MapPanel: React.FC<MapPanelProps> = ({
   onAddObstructor,
   editingObstructorId,
   setEditingObstructorId,
+  onCreateWindingPath,
 }) => {
   const handlePolygonClick = (id: string) => {
     console.log("click", id);
@@ -66,6 +68,14 @@ const MapPanel: React.FC<MapPanelProps> = ({
           className="w-full bg-green-500 text-white py-2 px-4 rounded mb-4 hover:bg-green-600 transition-colors"
         >
           Finish Polygon
+        </button>
+      )}
+      {selectedPolygonId && !editingPolygonId && (
+        <button
+          onClick={() => onCreateWindingPath(selectedPolygonId)}
+          className="w-full bg-yellow-500 text-white py-2 px-4 rounded mb-4 hover:bg-yellow-600 transition-colors"
+        >
+          Create Winding Path
         </button>
       )}
       <ul className="space-y-4">
