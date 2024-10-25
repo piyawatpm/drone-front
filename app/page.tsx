@@ -18,8 +18,7 @@ import {
 import MapPanel from "./_component/MapPanel";
 import DraggableMarker from "./_component/DraggableMarker";
 
-const libraries: Libraries = ["places", "marker"];
-
+const libraries: Libraries = ["places", "marker", "geometry"];
 const mapContainerStyle = { width: "100%", height: "100%" };
 
 const createMapOptions: google.maps.MapOptions = {
@@ -59,7 +58,7 @@ export default function CustomGoogleMap() {
 
   const [map, setMap] = useState<google.maps.Map | null>(null);
   const [polygons, setPolygons] = useState<PolygonData[]>([]);
-  
+  console.log("polygons", polygons);
   const [editingPolygonId, setEditingPolygonId] = useState<string | null>(null);
   const [selectedPolygonId, setSelectedPolygonId] = useState<string | null>(
     null
@@ -120,7 +119,32 @@ export default function CustomGoogleMap() {
   const handleEditPolygon = (id: string) => {
     setEditingPolygonId(id);
   };
+  const adjustObstructorPath = (
+    paths: google.maps.LatLngLiteral[],
+    spacing: number
+  ): google.maps.LatLngLiteral[] => {
+    if (paths.length < 2) return paths;
 
+    const adjustedPath: google.maps.LatLngLiteral[] = [paths[0]];
+    for (let i = 1; i < paths.length; i++) {
+      const start = paths[i - 1];
+      const end = paths[i];
+      const distance = google.maps.geometry.spherical.computeDistanceBetween(
+        new google.maps.LatLng(start),
+        new google.maps.LatLng(end)
+      );
+      const numPoints = Math.floor(distance / (spacing * 111111)) + 1;
+
+      for (let j = 1; j <= numPoints; j++) {
+        const fraction = j / numPoints;
+        const lat = start.lat + (end.lat - start.lat) * fraction;
+        const lng = start.lng + (end.lng - start.lng) * fraction;
+        adjustedPath.push({ lat, lng });
+      }
+    }
+
+    return adjustedPath;
+  };
   const handleFinishPolygon = () => {
     if (editingPolygonId) {
       setPolygons(
@@ -134,6 +158,22 @@ export default function CustomGoogleMap() {
       setSelectedPolygonId(null);
       setEditingPolygonId(null);
     } else if (editingObstructorId) {
+      setPolygons(
+        polygons.map((polygon) => ({
+          ...polygon,
+          obstructors: polygon.obstructors.map((obstructor) => {
+            if (obstructor.id === editingObstructorId) {
+              const adjustedPaths = adjustObstructorPath(
+                obstructor.paths,
+                0.00001
+              );
+              console.log("adjustedPaths", adjustedPaths);
+              return { ...obstructor, paths: adjustedPaths };
+            }
+            return obstructor;
+          }),
+        }))
+      );
       setEditingObstructorId(null);
     }
   };

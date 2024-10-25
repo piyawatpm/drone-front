@@ -138,6 +138,7 @@ const MapPanel: React.FC<MapPanelProps> = ({
                   <button
                     onClick={() => {
                       if (editingObstructorId) {
+                        onFinishPolygon();
                         setEditingObstructorId(null);
                       } else {
                         onAddObstructor(polygon.id);
