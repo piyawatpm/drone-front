@@ -59,31 +59,31 @@ export default function CustomGoogleMap() {
   const [map, setMap] = useState<google.maps.Map | null>(null);
   const [polygons, setPolygons] = useState<PolygonData[]>([
     {
-      id: "1729849006274",
+      id: "1729853883538",
       name: "Polygon 1",
       paths: [
         {
-          lat: 37.566475000082754,
-          lng: 126.97910455409598,
+          lat: 37.56711281046817,
+          lng: 126.97805849261188,
         },
         {
-          lat: 37.567521006247595,
-          lng: 126.97802094166872,
+          lat: 37.567767623447445,
+          lng: 126.97807995027635,
         },
         {
-          lat: 37.56822683950589,
-          lng: 126.97930840197832,
+          lat: 37.56778463150193,
+          lng: 126.97905627428804,
         },
         {
-          lat: 37.56755502246164,
-          lng: 126.98044565858513,
+          lat: 37.56711281046745,
+          lng: 126.9790348166381,
         },
       ],
       completed: true,
     },
   ]);
   console.log("polygons", polygons);
-  const [angel, setAngel] = useState<number>(45);
+  const [angle, setAngle] = useState<number>(0);
   const [editingPolygonId, setEditingPolygonId] = useState<string | null>(null);
   const [selectedPolygonId, setSelectedPolygonId] = useState<string | null>(
     null
@@ -95,19 +95,25 @@ export default function CustomGoogleMap() {
   const [showWindingPath, setShowWindingPath] = useState<string | null>(null);
 
   const windingPathRef = useRef<google.maps.Polyline | null>(null);
-
   useEffect(() => {
     if (map && showWindingPath) {
       const selectedPolygon = polygons.find((p) => p.id === showWindingPath);
       if (selectedPolygon && selectedPolygon.windingPath) {
         // Remove existing winding path if any
         if (windingPathRef.current) {
-          (windingPathRef.current as google.maps.Polyline).setMap(null);
+          windingPathRef.current.setMap(null);
         }
+
+        // Filter out null coordinates
+        const validCoordinates = selectedPolygon.windingPath.filter(
+          (coord) => !isNaN(coord.lat) && !isNaN(coord.lng)
+        );
+
+        console.log("Valid coordinates:", validCoordinates);
 
         // Create new winding path
         windingPathRef.current = new google.maps.Polyline({
-          path: selectedPolygon.windingPath,
+          path: validCoordinates,
           geodesic: true,
           strokeColor: "#FF0000",
           strokeOpacity: 1.0,
@@ -220,7 +226,7 @@ export default function CustomGoogleMap() {
             if (obstructor.id === editingObstructorId) {
               const adjustedPaths = adjustObstructorPath(
                 obstructor.paths,
-                0.00001
+                0.001
               );
               console.log("adjustedPaths", adjustedPaths);
               return { ...obstructor, paths: adjustedPaths };
@@ -302,32 +308,66 @@ export default function CustomGoogleMap() {
   };
   const generateWindingPath = (
     polygon: google.maps.LatLngLiteral[],
-    spacing: number
+    angle: number,
+    totalDistance: number,
+    density: number
   ): google.maps.LatLngLiteral[] => {
     const bounds = new google.maps.LatLngBounds();
     polygon.forEach((point) => bounds.extend(point));
 
     const ne = bounds.getNorthEast();
     const sw = bounds.getSouthWest();
+    const nw = new google.maps.LatLng(ne.lat(), sw.lng());
+    const se = new google.maps.LatLng(sw.lat(), ne.lng());
 
+    const width = ne.lng() - nw.lng();
+    const height = ne.lat() - se.lat();
+
+    const angleRadians = (angle * Math.PI) / 180;
+    const distancePerWinding = Math.min(height, width) / density; // Adjust this value to change the density of windings
+    const windingsCount = Math.floor(totalDistance / distancePerWinding);
+    console.log("windingsCount", windingsCount);
     const windingPath: google.maps.LatLngLiteral[] = [];
-    let isReverse = false;
+    let order = true;
 
-    for (let lat = ne.lat(); lat > sw.lat(); lat -= spacing) {
-      const line = [
-        { lat, lng: sw.lng() },
-        { lat, lng: ne.lng() },
-      ];
+    for (let i = 0; i < windingsCount; i++) {
+      const down = (i * distancePerWinding) / Math.cos(angleRadians);
+      let firstPoint: google.maps.LatLng, secondPoint: google.maps.LatLng;
 
-      const intersections = findIntersections(polygon, line);
+      if (down < width * Math.tan(angleRadians)) {
+        secondPoint = new google.maps.LatLng(
+          nw.lat(),
+          nw.lng() + down / Math.tan(angleRadians)
+        );
+      } else {
+        secondPoint = new google.maps.LatLng(
+          nw.lat() - down + width * Math.tan(angleRadians),
+          se.lng()
+        );
+      }
 
-      if (intersections.length >= 2) {
-        intersections.sort((a, b) => a.lng - b.lng);
-        if (isReverse) {
-          intersections.reverse();
+      if (down < height) {
+        firstPoint = new google.maps.LatLng(nw.lat() - down, nw.lng());
+      } else {
+        firstPoint = new google.maps.LatLng(
+          sw.lat(),
+          sw.lng() + (down - height) / Math.tan(angleRadians)
+        );
+      }
+
+      const collisions = findIntersections(polygon, [
+        firstPoint.toJSON(),
+        secondPoint.toJSON(),
+      ]);
+
+      if (collisions.length >= 2) {
+        collisions.sort((a, b) => a.lng - b.lng);
+        if (order) {
+          windingPath.push(collisions[0], collisions[1]);
+        } else {
+          windingPath.push(collisions[1], collisions[0]);
         }
-        windingPath.push(...intersections);
-        isReverse = !isReverse;
+        order = !order;
       }
     }
 
@@ -336,14 +376,28 @@ export default function CustomGoogleMap() {
   const handleCreateWindingPath = (polygonId: string) => {
     setPolygons(
       polygons.map((polygon) => {
-        if (polygon.id === polygonId && !polygon.windingPath) {
-          const windingPath = generateWindingPath(polygon.paths, 0.00001);
+        if (polygon.id === polygonId) {
+          const totalDistance = 5; // Adjust this value to change the total path length
+          const density = 10;
+          const windingPath = generateWindingPath(
+            polygon.paths,
+            angle,
+            totalDistance,
+            density
+          );
           return { ...polygon, windingPath };
         }
         return polygon;
       })
     );
     setShowWindingPath(polygonId);
+  };
+
+  const handleAngleChange = (newAngle: number) => {
+    setAngle(newAngle);
+    if (showWindingPath) {
+      handleCreateWindingPath(showWindingPath);
+    }
   };
   const findIntersections = (
     polygon: google.maps.LatLngLiteral[],
@@ -528,6 +582,23 @@ export default function CustomGoogleMap() {
         setEditingObstructorId={setEditingObstructorId}
         onCreateWindingPath={handleCreateWindingPath}
       />
+      <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 bg-white p-4 rounded-lg shadow-md">
+        <label
+          htmlFor="angle-slider"
+          className="block text-sm font-medium text-gray-700 mb-2"
+        >
+          Winding Path Angle: {angle}°
+        </label>
+        <input
+          id="angle-slider"
+          type="range"
+          min="0"
+          max="90"
+          value={angle}
+          onChange={(e) => handleAngleChange(parseInt(e.target.value))}
+          className="w-64"
+        />
+      </div>
     </div>
   );
 }
