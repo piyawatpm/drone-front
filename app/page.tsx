@@ -59,34 +59,31 @@ export default function CustomGoogleMap() {
   const [map, setMap] = useState<google.maps.Map | null>(null);
   const [polygons, setPolygons] = useState<PolygonData[]>([
     {
-      id: "1729849829259",
+      id: "1729849006274",
       name: "Polygon 1",
       paths: [
         {
-          lat: 37.56514833698932,
-          lng: 126.9774737710834,
+          lat: 37.566475000082754,
+          lng: 126.97910455409598,
         },
         {
-          lat: 37.56600726899642,
-          lng: 126.97739866923594,
+          lat: 37.567521006247595,
+          lng: 126.97802094166872,
         },
         {
-          lat: 37.566015773224215,
-          lng: 126.97857884112472,
+          lat: 37.56822683950589,
+          lng: 126.97930840197832,
         },
         {
-          lat: 37.565411970638955,
-          lng: 126.9784715527712,
-        },
-        {
-          lat: 37.56519936292982,
-          lng: 126.97832134907627,
+          lat: 37.56755502246164,
+          lng: 126.98044565858513,
         },
       ],
       completed: true,
     },
   ]);
   console.log("polygons", polygons);
+  const [angel, setAngel] = useState<number>(45);
   const [editingPolygonId, setEditingPolygonId] = useState<string | null>(null);
   const [selectedPolygonId, setSelectedPolygonId] = useState<string | null>(
     null
@@ -97,6 +94,36 @@ export default function CustomGoogleMap() {
 
   const [showWindingPath, setShowWindingPath] = useState<string | null>(null);
 
+  const windingPathRef = useRef<google.maps.Polyline | null>(null);
+
+  useEffect(() => {
+    if (map && showWindingPath) {
+      const selectedPolygon = polygons.find((p) => p.id === showWindingPath);
+      if (selectedPolygon && selectedPolygon.windingPath) {
+        // Remove existing winding path if any
+        if (windingPathRef.current) {
+          (windingPathRef.current as google.maps.Polyline).setMap(null);
+        }
+
+        // Create new winding path
+        windingPathRef.current = new google.maps.Polyline({
+          path: selectedPolygon.windingPath,
+          geodesic: true,
+          strokeColor: "#FF0000",
+          strokeOpacity: 1.0,
+          strokeWeight: 2,
+          map: map,
+        });
+      }
+    }
+
+    // Cleanup function
+    return () => {
+      if (windingPathRef.current) {
+        windingPathRef.current.setMap(null);
+      }
+    };
+  }, [map, showWindingPath, polygons]);
   const onLoad = useCallback((map: google.maps.Map) => {
     map.setZoom(17);
     setMap(map);
@@ -386,6 +413,7 @@ export default function CustomGoogleMap() {
     }
     return isInside;
   };
+
   return (
     <div className="w-screen h-screen flex items-center justify-center relative">
       <GoogleMap
@@ -437,16 +465,7 @@ export default function CustomGoogleMap() {
                   }}
                 />
               ))}
-              {showWindingPath === polygon.id && polygon.windingPath && (
-                <Polyline
-                  path={polygon.windingPath}
-                  options={{
-                    strokeColor: "#FF0000",
-                    strokeOpacity: 1,
-                    strokeWeight: 2,
-                  }}
-                />
-              )}
+
               <Polyline
                 path={validPath}
                 options={{
