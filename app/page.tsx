@@ -1,101 +1,441 @@
-import Image from "next/image";
+"use client";
+import React, {
+  useState,
+  useCallback,
+  useMemo,
+  useEffect,
+  useRef,
+} from "react";
+import {
+  GoogleMap,
+  Libraries,
+  Polygon,
+  useJsApiLoader,
+  Polyline,
+  Marker,
+  OverlayView,
+} from "@react-google-maps/api";
+import MapPanel from "./_component/MapPanel";
+import DraggableMarker from "./_component/DraggableMarker";
 
-export default function Home() {
+const libraries: Libraries = ["places", "marker"];
+
+const mapContainerStyle = { width: "100%", height: "100%" };
+
+const createMapOptions: google.maps.MapOptions = {
+  mapId: "7fb16e77d4180515",
+  // mapTypeId: "satellite",
+  tilt: 0,
+  rotateControl: true,
+  zoomControl: true,
+  mapTypeControl: false,
+  scaleControl: false,
+  streetViewControl: true,
+  fullscreenControl: false,
+  disableDoubleClickZoom: true,
+  disableDefaultUI: true,
+  minZoom: 16,
+  gestureHandling: "greedy",
+};
+interface ObstructorData {
+  id: string;
+  paths: google.maps.LatLngLiteral[];
+}
+
+interface PolygonData {
+  id: string;
+  name: string;
+  paths: google.maps.LatLngLiteral[];
+  completed: boolean;
+  obstructors: ObstructorData[];
+}
+export default function CustomGoogleMap() {
+  const [map, setMap] = useState<google.maps.Map | null>(null);
+  const [polygons, setPolygons] = useState<PolygonData[]>([]);
+  const [editingPolygonId, setEditingPolygonId] = useState<string | null>(null);
+  const [selectedPolygonId, setSelectedPolygonId] = useState<string | null>(
+    null
+  );
+  const [editingObstructorId, setEditingObstructorId] = useState<string | null>(
+    null
+  );
+  const [windingPaths, setWindingPaths] = useState<{
+    [key: string]: google.maps.LatLngLiteral[];
+  }>({});
+  console.log("windingPaths", windingPaths);
+  const handleAddObstructor = (polygonId: string) => {
+    const newObstructor: ObstructorData = {
+      id: Date.now().toString(),
+      paths: [],
+    };
+    setPolygons(
+      polygons.map((polygon) =>
+        polygon.id === polygonId
+          ? {
+              ...polygon,
+              obstructors: [...(polygon?.obstructors || []), newObstructor],
+            }
+          : polygon
+      )
+    );
+    setEditingObstructorId(newObstructor.id);
+    setSelectedPolygonId(polygonId);
+  };
+  const handleRemovePolygon = (id: string) => {
+    setPolygons(polygons.filter((polygon) => polygon.id !== id));
+    if (editingPolygonId === id) {
+      setEditingPolygonId(null);
+    }
+    if (selectedPolygonId === id) {
+      setSelectedPolygonId(null);
+    }
+  };
+  const { isLoaded } = useJsApiLoader({
+    id: "google-map-script",
+    googleMapsApiKey: process.env.NEXT_PUBLIC_GOOGLE_API_KEY as string,
+    libraries,
+  });
+
+  const onLoad = useCallback((map: google.maps.Map) => {
+    map.setZoom(17);
+    setMap(map);
+  }, []);
+
+  const onUnmount = useCallback(() => setMap(null), []);
+
+  const handleAddPolygon = () => {
+    const newPolygon: PolygonData = {
+      id: Date.now().toString(),
+      name: `Polygon ${polygons.length + 1}`,
+      paths: [],
+      completed: false,
+    };
+    setPolygons([...polygons, newPolygon]);
+    setSelectedPolygonId(newPolygon.id);
+    setEditingPolygonId(newPolygon.id);
+  };
+
+  const handleEditPolygon = (id: string) => {
+    setEditingPolygonId(id);
+  };
+
+  const handleFinishPolygon = () => {
+    if (editingPolygonId) {
+      setPolygons(
+        polygons.map((polygon) => {
+          if (polygon.id === editingPolygonId) {
+            const updatedPolygon = { ...polygon, completed: true };
+            const windingPath = generateWindingPath(
+              updatedPolygon.paths,
+              0.00001 // Smaller spacing value for more detail
+            );
+            setWindingPaths({
+              ...windingPaths,
+              [updatedPolygon.id]: windingPath,
+            });
+            return updatedPolygon;
+          }
+          return polygon;
+        })
+      );
+      setSelectedPolygonId(null);
+      setEditingPolygonId(null);
+    } else if (editingObstructorId) {
+      setEditingObstructorId(null);
+    }
+  };
+  console.log("editingObstructorId", editingObstructorId);
+  const handleMapClickForPolygon = (e: google.maps.MapMouseEvent) => {
+    if (editingPolygonId && e.latLng) {
+      setPolygons(
+        polygons.map((polygon) =>
+          polygon.id === editingPolygonId
+            ? { ...polygon, paths: [...polygon.paths, e.latLng!.toJSON()] }
+            : polygon
+        )
+      );
+    } else if (editingObstructorId && e.latLng) {
+      const clickedPoint = e.latLng!.toJSON();
+      setPolygons(
+        polygons.map((polygon) => {
+          if (
+            polygon.obstructors.some(
+              (obstructor) => obstructor.id === editingObstructorId
+            )
+          ) {
+            if (isPointInPolygon(clickedPoint, polygon.paths)) {
+              return {
+                ...polygon,
+                obstructors: polygon.obstructors.map((obstructor) =>
+                  obstructor.id === editingObstructorId
+                    ? {
+                        ...obstructor,
+                        paths: [...obstructor.paths, clickedPoint],
+                      }
+                    : obstructor
+                ),
+              };
+            }
+          }
+          return polygon;
+        })
+      );
+    }
+  };
+  if (!isLoaded) return null;
+  const defaultCenter = { lat: 37.5666791, lng: 126.9783589 };
+  const handleMarkerDragEnd = (
+    polygonId: string,
+    pointIndex: number,
+    newPosition: google.maps.LatLngLiteral
+  ) => {
+    setPolygons(
+      polygons.map((polygon) => {
+        if (polygon.id === polygonId) {
+          const newPaths = [...polygon.paths];
+          newPaths[pointIndex] = newPosition;
+          return { ...polygon, paths: newPaths };
+        }
+        return polygon;
+      })
+    );
+  };
+
+  const handleSelectPolygon = (id: string) => {
+    setSelectedPolygonId((prev) => (prev === id ? null : id));
+  };
+
+  const lineSymbol = {
+    path: "M 0,-1 0,1",
+    strokeOpacity: 1,
+    scale: 5,
+    strokeWeight: 2,
+    strokeColor: "#DDA13E",
+  };
+  const generateWindingPath = (
+    polygon: google.maps.LatLngLiteral[],
+    spacing: number
+  ): google.maps.LatLngLiteral[] => {
+    const bounds = new google.maps.LatLngBounds();
+    polygon.forEach((point) => bounds.extend(point));
+
+    const ne = bounds.getNorthEast();
+    const sw = bounds.getSouthWest();
+
+    const windingPath: google.maps.LatLngLiteral[] = [];
+    let isReverse = false;
+
+    for (let lat = ne.lat(); lat > sw.lat(); lat -= spacing) {
+      const line = [
+        { lat, lng: sw.lng() },
+        { lat, lng: ne.lng() },
+      ];
+
+      const intersections = findIntersections(polygon, line);
+
+      if (intersections.length >= 2) {
+        intersections.sort((a, b) => a.lng - b.lng);
+        if (isReverse) {
+          intersections.reverse();
+        }
+        windingPath.push(...intersections);
+        isReverse = !isReverse;
+      }
+    }
+
+    return windingPath;
+  };
+
+  const findIntersections = (
+    polygon: google.maps.LatLngLiteral[],
+    line: google.maps.LatLngLiteral[]
+  ): google.maps.LatLngLiteral[] => {
+    const intersections: google.maps.LatLngLiteral[] = [];
+
+    for (let i = 0; i < polygon.length; i++) {
+      const j = (i + 1) % polygon.length;
+      const intersection = lineIntersection(
+        polygon[i],
+        polygon[j],
+        line[0],
+        line[1]
+      );
+      if (intersection) {
+        intersections.push(intersection);
+      }
+    }
+
+    return intersections;
+  };
+
+  const lineIntersection = (
+    p1: google.maps.LatLngLiteral,
+    p2: google.maps.LatLngLiteral,
+    p3: google.maps.LatLngLiteral,
+    p4: google.maps.LatLngLiteral
+  ): google.maps.LatLngLiteral | null => {
+    const x1 = p1.lng,
+      y1 = p1.lat;
+    const x2 = p2.lng,
+      y2 = p2.lat;
+    const x3 = p3.lng,
+      y3 = p3.lat;
+    const x4 = p4.lng,
+      y4 = p4.lat;
+
+    const den = (y4 - y3) * (x2 - x1) - (x4 - x3) * (y2 - y1);
+    if (den === 0) return null;
+
+    const ua = ((x4 - x3) * (y1 - y3) - (y4 - y3) * (x1 - x3)) / den;
+    const ub = ((x2 - x1) * (y1 - y3) - (y2 - y1) * (x1 - x3)) / den;
+
+    if (ua < 0 || ua > 1 || ub < 0 || ub > 1) return null;
+
+    const x = x1 + ua * (x2 - x1);
+    const y = y1 + ua * (y2 - y1);
+
+    return { lat: y, lng: x };
+  };
+  const isPointInPolygon = (
+    point: google.maps.LatLngLiteral,
+    polygon: google.maps.LatLngLiteral[]
+  ): boolean => {
+    let isInside = false;
+    for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+      const xi = polygon[i].lng,
+        yi = polygon[i].lat;
+      const xj = polygon[j].lng,
+        yj = polygon[j].lat;
+
+      const intersect =
+        yi > point.lat !== yj > point.lat &&
+        point.lng < ((xj - xi) * (point.lat - yi)) / (yj - yi) + xi;
+      if (intersect) isInside = !isInside;
+    }
+    return isInside;
+  };
   return (
-    <div className="grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20 font-[family-name:var(--font-geist-sans)]">
-      <main className="flex flex-col gap-8 row-start-2 items-center sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol className="list-inside list-decimal text-sm text-center sm:text-left font-[family-name:var(--font-geist-mono)]">
-          <li className="mb-2">
-            Get started by editing{" "}
-            <code className="bg-black/[.05] dark:bg-white/[.06] px-1 py-0.5 rounded font-semibold">
-              app/page.tsx
-            </code>
-            .
-          </li>
-          <li>Save and see your changes instantly.</li>
-        </ol>
+    <div className="w-screen h-screen flex items-center justify-center relative">
+      <GoogleMap
+        mapContainerStyle={mapContainerStyle}
+        center={defaultCenter}
+        options={createMapOptions}
+        onLoad={onLoad}
+        onUnmount={onUnmount}
+        onClick={handleMapClickForPolygon}
+      >
+        {polygons.map((polygon) => {
+          const isSelected = polygon.id === selectedPolygonId;
+          const closedPath = [...polygon.paths, polygon.paths[0]]; // Close the loop
+          const validPath = closedPath.filter(
+            (coord) =>
+              coord &&
+              typeof coord.lat === "number" &&
+              typeof coord.lng === "number" &&
+              isFinite(coord.lat) &&
+              isFinite(coord.lng)
+          );
+          console.log("closedPath", closedPath);
 
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
-          <a
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
-            />
-            Deploy now
-          </a>
-          <a
-            className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:min-w-44"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Read our docs
-          </a>
-        </div>
-      </main>
-      <footer className="row-start-3 flex gap-6 flex-wrap items-center justify-center">
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
-          />
-          Learn
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
-      </footer>
+          return (
+            <React.Fragment key={polygon.id}>
+              <Polygon
+                key={polygon.id}
+                paths={polygon.paths}
+                visible={!editingObstructorId}
+                onClick={() => handleSelectPolygon(polygon.id)}
+                options={{
+                  fillColor: isSelected ? "#DDA13E" : "#49AEC2",
+                  fillOpacity: 0.35,
+                  strokeColor: "#49AEC2",
+                  strokeOpacity: isSelected ? 0 : 1,
+                  strokeWeight: 2,
+                }}
+              />
+              {polygon?.obstructors?.map((obstructor) => (
+                <Polygon
+                  key={obstructor.id}
+                  paths={obstructor.paths}
+                  options={{
+                    fillColor: "#FF0000",
+                    fillOpacity: 0.2,
+                    strokeColor: "#FF0000",
+                    strokeOpacity: 1,
+                    strokeWeight: 2,
+                  }}
+                />
+              ))}
+              {windingPaths[polygon.id] && (
+                <Polyline
+                  path={windingPaths[polygon.id]}
+                  options={{
+                    strokeColor: "#FF0000",
+                    strokeOpacity: 1,
+                    strokeWeight: 2,
+                  }}
+                />
+              )}
+              <Polyline
+                path={validPath}
+                options={{
+                  strokeColor: "#DDA13E",
+                  strokeOpacity: editingObstructorId ? 1 : 0,
+                  strokeWeight: 2,
+                  visible: editingObstructorId ? true : isSelected,
+                  zIndex: 1,
+                  icons: [
+                    {
+                      icon: lineSymbol,
+                      offset: "0",
+                      repeat: "15px",
+                    },
+                  ],
+                }}
+              />
+              {polygon.paths.map((point, index) => (
+                <DraggableMarker
+                  key={`${polygon.id}-${index}`}
+                  position={point}
+                  label={(index + 1).toString()}
+                  draggable={isSelected}
+                  onDrag={(newPosition) =>
+                    handleMarkerDragEnd(polygon.id, index, newPosition)
+                  }
+                  options={{
+                    icon: {
+                      path: google.maps.SymbolPath.CIRCLE,
+                      scale: isSelected ? 8 : 6,
+                      fillColor: isSelected ? "#DDA13E" : "#49AEC2",
+                      fillOpacity: 1,
+                      strokeColor: "#ffffff",
+                      strokeWeight: 2,
+                    },
+                    label: {
+                      text: (index + 1).toString(),
+                      color: "#ffffff",
+                      fontSize: "12px",
+                      fontWeight: "bold",
+                    },
+                  }}
+                />
+              ))}
+            </React.Fragment>
+          );
+        })}
+      </GoogleMap>
+      <MapPanel
+        polygons={polygons}
+        onAddPolygon={handleAddPolygon}
+        onEditPolygon={handleEditPolygon}
+        onFinishPolygon={handleFinishPolygon}
+        editingPolygonId={editingPolygonId}
+        onRemovePolygon={handleRemovePolygon}
+        onSelectPolygon={handleSelectPolygon}
+        selectedPolygonId={selectedPolygonId}
+        onAddObstructor={handleAddObstructor}
+        editingObstructorId={editingObstructorId}
+        setEditingObstructorId={setEditingObstructorId}
+      />
     </div>
   );
 }
