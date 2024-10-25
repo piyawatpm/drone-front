@@ -57,7 +57,35 @@ export default function CustomGoogleMap() {
   });
 
   const [map, setMap] = useState<google.maps.Map | null>(null);
-  const [polygons, setPolygons] = useState<PolygonData[]>([]);
+  const [polygons, setPolygons] = useState<PolygonData[]>([
+    {
+      id: "1729849829259",
+      name: "Polygon 1",
+      paths: [
+        {
+          lat: 37.56514833698932,
+          lng: 126.9774737710834,
+        },
+        {
+          lat: 37.56600726899642,
+          lng: 126.97739866923594,
+        },
+        {
+          lat: 37.566015773224215,
+          lng: 126.97857884112472,
+        },
+        {
+          lat: 37.565411970638955,
+          lng: 126.9784715527712,
+        },
+        {
+          lat: 37.56519936292982,
+          lng: 126.97832134907627,
+        },
+      ],
+      completed: true,
+    },
+  ]);
   console.log("polygons", polygons);
   const [editingPolygonId, setEditingPolygonId] = useState<string | null>(null);
   const [selectedPolygonId, setSelectedPolygonId] = useState<string | null>(
