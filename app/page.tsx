@@ -1,19 +1,13 @@
 "use client";
-import React, {
-  useState,
-  useCallback,
-  useMemo,
-  useEffect,
-  useRef,
-} from "react";
+import React, { useState, useCallback, useEffect, useRef } from "react";
+import * as turf from "@turf/turf";
+import PF from "pathfinding";
 import {
   GoogleMap,
   Libraries,
   Polygon,
   useJsApiLoader,
   Polyline,
-  Marker,
-  OverlayView,
 } from "@react-google-maps/api";
 import MapPanel from "./_component/MapPanel";
 import DraggableMarker from "./_component/DraggableMarker";
@@ -23,7 +17,6 @@ const mapContainerStyle = { width: "100%", height: "100%" };
 
 const createMapOptions: google.maps.MapOptions = {
   mapId: "7fb16e77d4180515",
-  // mapTypeId: "satellite",
   tilt: 0,
   rotateControl: true,
   zoomControl: true,
@@ -36,6 +29,7 @@ const createMapOptions: google.maps.MapOptions = {
   minZoom: 16,
   gestureHandling: "greedy",
 };
+
 interface ObstructorData {
   id: string;
   paths: google.maps.LatLngLiteral[];
@@ -49,6 +43,7 @@ interface PolygonData {
   obstructors: ObstructorData[];
   windingPath?: google.maps.LatLngLiteral[];
 }
+
 export default function CustomGoogleMap() {
   const { isLoaded } = useJsApiLoader({
     id: "google-map-script",
@@ -68,21 +63,40 @@ export default function CustomGoogleMap() {
         },
         {
           lat: 37.567767623447445,
-          lng: 126.97807995027635,
+          lng: 126.97805849261188,
         },
         {
-          lat: 37.56778463150193,
+          lat: 37.567767623447445,
           lng: 126.97905627428804,
         },
         {
-          lat: 37.56711281046745,
-          lng: 126.9790348166381,
+          lat: 37.56711281046817,
+          lng: 126.97905627428804,
         },
       ],
       completed: true,
+      obstructors: [
+        {
+          id: "1729914185124",
+          paths: [
+            {
+              lat: 37.56733816883098,
+              lng: 126.97846082394732,
+            },
+            {
+              lat: 37.567525258275204,
+              lng: 126.97826770488922,
+            },
+            {
+              lat: 37.56762730686489,
+              lng: 126.9788041467173,
+            },
+          ],
+        },
+      ],
     },
   ]);
-  console.log("polygons", polygons);
+
   const [angle, setAngle] = useState<number>(0);
   const [editingPolygonId, setEditingPolygonId] = useState<string | null>(null);
   const [selectedPolygonId, setSelectedPolygonId] = useState<string | null>(
@@ -95,6 +109,7 @@ export default function CustomGoogleMap() {
   const [showWindingPath, setShowWindingPath] = useState<string | null>(null);
 
   const windingPathRef = useRef<google.maps.Polyline | null>(null);
+
   useEffect(() => {
     if (map && showWindingPath) {
       const selectedPolygon = polygons.find((p) => p.id === showWindingPath);
@@ -130,6 +145,7 @@ export default function CustomGoogleMap() {
       }
     };
   }, [map, showWindingPath, polygons]);
+
   const onLoad = useCallback((map: google.maps.Map) => {
     map.setZoom(17);
     setMap(map);
@@ -155,6 +171,7 @@ export default function CustomGoogleMap() {
     setEditingObstructorId(newObstructor.id);
     setSelectedPolygonId(polygonId);
   };
+
   const handleRemovePolygon = (id: string) => {
     setPolygons(polygons.filter((polygon) => polygon.id !== id));
     if (editingPolygonId === id) {
@@ -171,6 +188,7 @@ export default function CustomGoogleMap() {
       name: `Polygon ${polygons.length + 1}`,
       paths: [],
       completed: false,
+      obstructors: [],
     };
     setPolygons([...polygons, newPolygon]);
     setSelectedPolygonId(newPolygon.id);
@@ -180,6 +198,7 @@ export default function CustomGoogleMap() {
   const handleEditPolygon = (id: string) => {
     setEditingPolygonId(id);
   };
+
   const adjustObstructorPath = (
     paths: google.maps.LatLngLiteral[],
     spacing: number
@@ -206,6 +225,7 @@ export default function CustomGoogleMap() {
 
     return adjustedPath;
   };
+
   const handleFinishPolygon = () => {
     if (editingPolygonId) {
       setPolygons(
@@ -238,7 +258,9 @@ export default function CustomGoogleMap() {
       setEditingObstructorId(null);
     }
   };
+
   console.log("editingObstructorId", editingObstructorId);
+
   const handleMapClickForPolygon = (e: google.maps.MapMouseEvent) => {
     if (editingPolygonId && e.latLng) {
       setPolygons(
@@ -276,8 +298,10 @@ export default function CustomGoogleMap() {
       );
     }
   };
+
   if (!isLoaded) return null;
   const defaultCenter = { lat: 37.5666791, lng: 126.9783589 };
+
   const handleMarkerDragEnd = (
     polygonId: string,
     pointIndex: number,
@@ -306,85 +330,232 @@ export default function CustomGoogleMap() {
     strokeWeight: 2,
     strokeColor: "#DDA13E",
   };
+
   const generateWindingPath = (
-    polygon: google.maps.LatLngLiteral[],
+    polygon: PolygonData,
     angle: number,
-    totalDistance: number,
     density: number
   ): google.maps.LatLngLiteral[] => {
-    const bounds = new google.maps.LatLngBounds();
-    polygon.forEach((point) => bounds.extend(point));
+    // Step 1: Convert main polygon to GeoJSON
+    const mainPolygonCoords = polygon.paths.map((coord) => [
+      coord.lng,
+      coord.lat,
+    ]);
+    if (
+      mainPolygonCoords[0][0] !==
+        mainPolygonCoords[mainPolygonCoords.length - 1][0] ||
+      mainPolygonCoords[0][1] !==
+        mainPolygonCoords[mainPolygonCoords.length - 1][1]
+    ) {
+      // Close the polygon if not already closed
+      mainPolygonCoords.push(mainPolygonCoords[0]);
+    }
+    let mainPolygonGeoJSON = turf.polygon([mainPolygonCoords]);
 
-    const ne = bounds.getNorthEast();
-    const sw = bounds.getSouthWest();
-    const nw = new google.maps.LatLng(ne.lat(), sw.lng());
-    const se = new google.maps.LatLng(sw.lat(), ne.lng());
-
-    const width = ne.lng() - nw.lng();
-    const height = ne.lat() - se.lat();
-
-    const angleRadians = (angle * Math.PI) / 180;
-    const distancePerWinding = Math.min(height, width) / density; // Adjust this value to change the density of windings
-    const windingsCount = Math.floor(totalDistance / distancePerWinding);
-    console.log("windingsCount", windingsCount);
-    const windingPath: google.maps.LatLngLiteral[] = [];
-    let order = true;
-
-    for (let i = 0; i < windingsCount; i++) {
-      const down = (i * distancePerWinding) / Math.cos(angleRadians);
-      let firstPoint: google.maps.LatLng, secondPoint: google.maps.LatLng;
-
-      if (down < width * Math.tan(angleRadians)) {
-        secondPoint = new google.maps.LatLng(
-          nw.lat(),
-          nw.lng() + down / Math.tan(angleRadians)
-        );
-      } else {
-        secondPoint = new google.maps.LatLng(
-          nw.lat() - down + width * Math.tan(angleRadians),
-          se.lng()
-        );
-      }
-
-      if (down < height) {
-        firstPoint = new google.maps.LatLng(nw.lat() - down, nw.lng());
-      } else {
-        firstPoint = new google.maps.LatLng(
-          sw.lat(),
-          sw.lng() + (down - height) / Math.tan(angleRadians)
-        );
-      }
-
-      const collisions = findIntersections(polygon, [
-        firstPoint.toJSON(),
-        secondPoint.toJSON(),
+    // Step 2: Convert obstacles to GeoJSON
+    const obstaclePolygonsGeoJSON = polygon.obstructors.map((obstructor) => {
+      let obstructorCoords = obstructor.paths.map((coord) => [
+        coord.lng,
+        coord.lat,
       ]);
+      if (
+        obstructorCoords[0][0] !==
+          obstructorCoords[obstructorCoords.length - 1][0] ||
+        obstructorCoords[0][1] !==
+          obstructorCoords[obstructorCoords.length - 1][1]
+      ) {
+        // Close the polygon if not already closed
+        obstructorCoords.push(obstructorCoords[0]);
+      }
+      return turf.polygon([obstructorCoords]);
+    });
 
-      if (collisions.length >= 2) {
-        collisions.sort((a, b) => a.lng - b.lng);
-        if (order) {
-          windingPath.push(collisions[0], collisions[1]);
-        } else {
-          windingPath.push(collisions[1], collisions[0]);
+    // Step 3: Subtract obstacles from main polygon
+    let freeSpace = mainPolygonGeoJSON;
+    obstaclePolygonsGeoJSON.forEach((obstacle) => {
+      freeSpace = turf.difference(
+        turf.featureCollection([freeSpace, obstacle])
+      );
+    });
+    if (!freeSpace) {
+      console.error("No free space available after subtracting obstacles.");
+      return [];
+    }
+    console.log("freeSpace", freeSpace);
+    // Step 4: Rotate the free space and work in rotated coordinates
+    const pivot = turf.centroid(freeSpace);
+    const rotatedFreeSpace = turf.transformRotate(freeSpace, angle, {
+      pivot: pivot.geometry.coordinates,
+    });
+
+    // Step 5: Generate equally spaced lines across the rotated polygon
+    const spacing = density; // Spacing between lines in meters
+    const bbox = turf.bbox(rotatedFreeSpace);
+    const lineDistance = turf.distance(
+      turf.point([bbox[0], bbox[1]]),
+      turf.point([bbox[0], bbox[3]]),
+      { units: "meters" }
+    );
+    const numLines = Math.floor(lineDistance / spacing);
+    console.log("numLines", numLines);
+    const lines = [];
+    for (let i = 0; i <= numLines; i++) {
+      const y = bbox[1] + (i / numLines) * (bbox[3] - bbox[1]);
+      const line = turf.lineString([
+        [bbox[0], y],
+        [bbox[2], y],
+      ]);
+      lines.push(line);
+    }
+    console.log("lines", lines);
+    console.log("rotatedFreeSpace", rotatedFreeSpace);
+    // Step 6: Clip lines to the rotated free space polygon
+    const clippedLines = lines.map((line) =>
+      turf.lineIntersect(line, rotatedFreeSpace)
+    );
+    console.log("clippedLines", clippedLines);
+    // Step 7: Generate points along the clipped lines
+
+    const points = [];
+    clippedLines.forEach((clippedLine, index) => {
+      if (clippedLine.features.length > 0) {
+        const coords = clippedLine.features.map(
+          (feature) => feature.geometry.coordinates
+        );
+        // Sort coordinates from left to right
+        coords.sort((a, b) => a[0] - b[0]);
+        if (index % 2 === 1) {
+          // Reverse every other line to create the winding path
+          coords.reverse();
         }
-        order = !order;
+        coords.forEach((coord) => {
+          points.push(turf.point(coord));
+        });
+      }
+    });
+    polygon.obstructors.forEach((obstructor) => {
+      obstructor.paths.forEach((path) => {
+        points.push(turf.point([path.lng, path.lat]));
+      });
+    });
+    console.log("points", points);
+    // Step 8: Adjust path for obstacles using pathfinding when necessary
+    const adjustedPath = [];
+    for (let i = 0; i < points.length - 1; i++) {
+      const start = points[i];
+      const end = points[i + 1];
+      const distance = turf.distance(start, end, { units: "meters" });
+      if (distance > spacing * 1.5) {
+        // Obstacle likely between points, use pathfinding
+        const pathSegment = findPathWithAStar(
+          rotatedFreeSpace,
+          start,
+          end,
+          spacing / 2
+        );
+        adjustedPath.push(...pathSegment);
+      } else {
+        adjustedPath.push(start);
       }
     }
+    // Add the last point
+    adjustedPath.push(points[points.length - 1]);
+
+    // Step 9: Rotate adjusted path back to original coordinates
+    // const finalPoints = adjustedPath.map((point) =>
+    //   turf.transformRotate(point, -angle, { pivot: pivot.geometry.coordinates })
+    // );
+    const finalPoints = adjustedPath;
+
+    // Step 10: Convert points back to LatLngLiteral
+    const windingPath = finalPoints.map((point) => ({
+      lat: point.geometry.coordinates[1],
+      lng: point.geometry.coordinates[0],
+    }));
 
     return windingPath;
   };
+
+  const findPathWithAStar = (
+    polygon: turf.Feature<turf.Polygon | turf.MultiPolygon>,
+    startPoint: turf.Feature<turf.Point>,
+    endPoint: turf.Feature<turf.Point>,
+    cellSize: number
+  ): turf.Feature<turf.Point>[] => {
+    // Create a grid for pathfinding
+    const bbox = turf.bbox(polygon);
+    const xCells = Math.max(2, Math.ceil((bbox[2] - bbox[0]) / cellSize));
+    const yCells = Math.max(2, Math.ceil((bbox[3] - bbox[1]) / cellSize));
+
+    const matrix = [];
+    for (let y = 0; y < yCells; y++) {
+      const row = [];
+      for (let x = 0; x < xCells; x++) {
+        const xCoord = bbox[0] + (x / (xCells - 1)) * (bbox[2] - bbox[0]);
+        const yCoord = bbox[1] + (y / (yCells - 1)) * (bbox[3] - bbox[1]);
+        const cellCenter = turf.point([xCoord, yCoord]);
+        const isInside = turf.booleanPointInPolygon(cellCenter, polygon);
+        row.push(isInside ? 0 : 1); // 0 = walkable, 1 = blocked
+      }
+      matrix.push(row);
+    }
+    console.log("matrix", matrix);
+    const grid = new PF.Grid(matrix);
+    const finder = new PF.AStarFinder();
+
+    // Map points to grid coordinates
+    const epsilon = 1e-10; // Small value to prevent division by zero
+    const xScale = (coord) =>
+      Math.floor(
+        ((coord[0] - bbox[0]) / (bbox[2] - bbox[0] + epsilon)) * (xCells - 1)
+      );
+    const yScale = (coord) =>
+      Math.floor(
+        ((coord[1] - bbox[1]) / (bbox[3] - bbox[1] + epsilon)) * (yCells - 1)
+      );
+
+    const startX = xScale(startPoint.geometry.coordinates);
+    const startY = yScale(startPoint.geometry.coordinates);
+    const endX = xScale(endPoint.geometry.coordinates);
+    const endY = yScale(endPoint.geometry.coordinates);
+
+    const gridBackup = grid.clone();
+    const path = finder.findPath(startX, startY, endX, endY, gridBackup);
+
+    // Check if a path was found
+    if (path.length === 0) {
+      console.error("No path found between points.");
+      return [startPoint, endPoint];
+    }
+
+    // Convert grid path back to coordinates
+    const pathCoords = path.map(([x, y]) => {
+      const xCoord = bbox[0] + (x / (xCells - 1)) * (bbox[2] - bbox[0]);
+      const yCoord = bbox[1] + (y / (yCells - 1)) * (bbox[3] - bbox[1]);
+      return turf.point([xCoord, yCoord]);
+    });
+
+    return pathCoords;
+  };
+
+  const isPointInPolygon = (
+    point: google.maps.LatLngLiteral,
+    polygon: google.maps.LatLngLiteral[]
+  ): boolean => {
+    const googlePoint = new google.maps.LatLng(point);
+    const googlePolygon = new google.maps.Polygon({ paths: polygon });
+    return google.maps.geometry.poly.containsLocation(
+      googlePoint,
+      googlePolygon
+    );
+  };
+
   const handleCreateWindingPath = (polygonId: string) => {
     setPolygons(
       polygons.map((polygon) => {
         if (polygon.id === polygonId) {
-          const totalDistance = 5; // Adjust this value to change the total path length
-          const density = 10;
-          const windingPath = generateWindingPath(
-            polygon.paths,
-            angle,
-            totalDistance,
-            density
-          );
+          const density = 10; // Adjust this value to change the spacing between lines (in meters)
+          const windingPath = generateWindingPath(polygon, angle, density);
           return { ...polygon, windingPath };
         }
         return polygon;
@@ -398,74 +569,6 @@ export default function CustomGoogleMap() {
     if (showWindingPath) {
       handleCreateWindingPath(showWindingPath);
     }
-  };
-  const findIntersections = (
-    polygon: google.maps.LatLngLiteral[],
-    line: google.maps.LatLngLiteral[]
-  ): google.maps.LatLngLiteral[] => {
-    const intersections: google.maps.LatLngLiteral[] = [];
-
-    for (let i = 0; i < polygon.length; i++) {
-      const j = (i + 1) % polygon.length;
-      const intersection = lineIntersection(
-        polygon[i],
-        polygon[j],
-        line[0],
-        line[1]
-      );
-      if (intersection) {
-        intersections.push(intersection);
-      }
-    }
-
-    return intersections;
-  };
-
-  const lineIntersection = (
-    p1: google.maps.LatLngLiteral,
-    p2: google.maps.LatLngLiteral,
-    p3: google.maps.LatLngLiteral,
-    p4: google.maps.LatLngLiteral
-  ): google.maps.LatLngLiteral | null => {
-    const x1 = p1.lng,
-      y1 = p1.lat;
-    const x2 = p2.lng,
-      y2 = p2.lat;
-    const x3 = p3.lng,
-      y3 = p3.lat;
-    const x4 = p4.lng,
-      y4 = p4.lat;
-
-    const den = (y4 - y3) * (x2 - x1) - (x4 - x3) * (y2 - y1);
-    if (den === 0) return null;
-
-    const ua = ((x4 - x3) * (y1 - y3) - (y4 - y3) * (x1 - x3)) / den;
-    const ub = ((x2 - x1) * (y1 - y3) - (y2 - y1) * (x1 - x3)) / den;
-
-    if (ua < 0 || ua > 1 || ub < 0 || ub > 1) return null;
-
-    const x = x1 + ua * (x2 - x1);
-    const y = y1 + ua * (y2 - y1);
-
-    return { lat: y, lng: x };
-  };
-  const isPointInPolygon = (
-    point: google.maps.LatLngLiteral,
-    polygon: google.maps.LatLngLiteral[]
-  ): boolean => {
-    let isInside = false;
-    for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
-      const xi = polygon[i].lng,
-        yi = polygon[i].lat;
-      const xj = polygon[j].lng,
-        yj = polygon[j].lat;
-
-      const intersect =
-        yi > point.lat !== yj > point.lat &&
-        point.lng < ((xj - xi) * (point.lat - yi)) / (yj - yi) + xi;
-      if (intersect) isInside = !isInside;
-    }
-    return isInside;
   };
 
   return (
