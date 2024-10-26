@@ -77,12 +77,13 @@ export default function CustomGoogleMap() {
       completed: true,
       obstructors: [
         {
-          id: "1729938280816",
+          id: "1729947165419",
           paths: [
-            { lat: 0.241699, lng: 1.351318 },
-            { lat: 0.527336, lng: 1.318359 },
-            { lat: 0.538322, lng: 1.658936 },
-            { lat: 0.340574, lng: 1.889648 },
+            { lat: 0.834931, lng: 1.983032 },
+            { lat: 1.296276, lng: 1.598511 },
+            { lat: 1.461023, lng: 2.147827 },
+            { lat: 1.285293, lng: 2.521362 },
+            { lat: 0.845917, lng: 2.477417 },
           ],
         },
       ],
@@ -468,7 +469,7 @@ export default function CustomGoogleMap() {
 
       let options = {
         units: "meters",
-        resolution: 4000,
+        resolution: 3000,
         obstacles: turf.polygon([
           [
             [1.351318, 0.241699],
@@ -479,11 +480,14 @@ export default function CustomGoogleMap() {
           ],
         ]).geometry,
       };
+      const isIntersected = turf.booleanIntersects(
+        line,
+        turf.featureCollection(obstaclePolygonsGeoJSON)
+      );
+      console.log("isIntersected", isIntersected);
 
-      const newPath = turf.shortestPath(start, end, options);
-      console.log("newPath", newPath);
-
-      if (newPath && newPath.geometry && newPath.geometry.coordinates) {
+      if (isIntersected) {
+        const newPath = turf.shortestPath(start, end, options);
         // Check if the path is a LineString or MultiLineString
         let coordsArray = [];
         if (newPath.geometry.type === "LineString") {
@@ -601,7 +605,7 @@ export default function CustomGoogleMap() {
     setPolygons(
       polygons.map((polygon) => {
         if (polygon.id === polygonId) {
-          const density = 10000; // Adjust this value to change the spacing between lines (in meters)
+          const density = 4000; // Adjust this value to change the spacing between lines (in meters)
           const windingPath = generateWindingPath(polygon, angle, density);
           return { ...polygon, windingPath };
         }
