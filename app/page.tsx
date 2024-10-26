@@ -467,6 +467,8 @@ export default function CustomGoogleMap() {
       ]);
 
       let options = {
+        units: "meters",
+        resolution: 4000,
         obstacles: turf.polygon([
           [
             [1.351318, 0.241699],
@@ -477,16 +479,35 @@ export default function CustomGoogleMap() {
           ],
         ]).geometry,
       };
+
       const newPath = turf.shortestPath(start, end, options);
       console.log("newPath", newPath);
-     
 
-      adjustedPath.push(start);
+      if (newPath && newPath.geometry && newPath.geometry.coordinates) {
+        // Check if the path is a LineString or MultiLineString
+        let coordsArray = [];
+        if (newPath.geometry.type === "LineString") {
+          coordsArray = newPath.geometry.coordinates;
+        } else if (newPath.geometry.type === "MultiLineString") {
+          // Flatten the coordinates array for MultiLineString
+          coordsArray = newPath.geometry.coordinates.flat();
+        }
+
+        // Convert coordinates to points and add to adjustedPath
+        coordsArray.forEach((coord) => {
+          adjustedPath.push(turf.point(coord));
+        });
+      } else {
+        // If no path is found, use the direct line
+        adjustedPath.push(start);
+        adjustedPath.push(end);
+      }
       console.log(`line ${i}  `, line);
     }
-    // Add the last point
-    adjustedPath.push(points[points.length - 1]);
-    
+    // Add the last point if not already added
+    if (!adjustedPath.includes(points[points.length - 1])) {
+      adjustedPath.push(points[points.length - 1]);
+    }
     // Step 9: Rotate adjusted path back to original coordinates
     const finalPoints = adjustedPath.map((point) =>
       turf.transformRotate(point, -angle, { pivot: pivot.geometry.coordinates })
@@ -580,7 +601,7 @@ export default function CustomGoogleMap() {
     setPolygons(
       polygons.map((polygon) => {
         if (polygon.id === polygonId) {
-          const density = 30000; // Adjust this value to change the spacing between lines (in meters)
+          const density = 10000; // Adjust this value to change the spacing between lines (in meters)
           const windingPath = generateWindingPath(polygon, angle, density);
           return { ...polygon, windingPath };
         }
