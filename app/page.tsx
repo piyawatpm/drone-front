@@ -26,7 +26,7 @@ const createMapOptions: google.maps.MapOptions = {
   fullscreenControl: false,
   disableDoubleClickZoom: true,
   disableDefaultUI: true,
-  minZoom: 16,
+  minZoom: 2,
   gestureHandling: "greedy",
 };
 
@@ -58,39 +58,31 @@ export default function CustomGoogleMap() {
       name: "Polygon 1",
       paths: [
         {
-          lat: 37.56711281046817,
-          lng: 126.97805849261188,
+          lat: 0,
+          lng: 1,
         },
         {
-          lat: 37.567767623447445,
-          lng: 126.97805849261188,
+          lat: 2,
+          lng: 1,
         },
         {
-          lat: 37.567767623447445,
-          lng: 126.97905627428804,
+          lat: 2,
+          lng: 3,
         },
         {
-          lat: 37.56711281046817,
-          lng: 126.97905627428804,
+          lat: 0,
+          lng: 3,
         },
       ],
       completed: true,
       obstructors: [
         {
-          id: "1729914185124",
+          id: "1729938280816",
           paths: [
-            {
-              lat: 37.56733816883098,
-              lng: 126.97846082394732,
-            },
-            {
-              lat: 37.567525258275204,
-              lng: 126.97826770488922,
-            },
-            {
-              lat: 37.56762730686489,
-              lng: 126.9788041467173,
-            },
+            { lat: 0.241699, lng: 1.351318 },
+            { lat: 0.527336, lng: 1.318359 },
+            { lat: 0.538322, lng: 1.658936 },
+            { lat: 0.340574, lng: 1.889648 },
           ],
         },
       ],
@@ -147,7 +139,7 @@ export default function CustomGoogleMap() {
   }, [map, showWindingPath, polygons]);
 
   const onLoad = useCallback((map: google.maps.Map) => {
-    map.setZoom(17);
+    map.setZoom(7);
     setMap(map);
   }, []);
 
@@ -244,10 +236,11 @@ export default function CustomGoogleMap() {
           ...polygon,
           obstructors: polygon.obstructors.map((obstructor) => {
             if (obstructor.id === editingObstructorId) {
-              const adjustedPaths = adjustObstructorPath(
-                obstructor.paths,
-                0.001
-              );
+              // const adjustedPaths = adjustObstructorPath(
+              //   obstructor.paths,
+              //   0.001
+              // );
+              const adjustedPaths = obstructor.paths;
               console.log("adjustedPaths", adjustedPaths);
               return { ...obstructor, paths: adjustedPaths };
             }
@@ -300,7 +293,7 @@ export default function CustomGoogleMap() {
   };
 
   if (!isLoaded) return null;
-  const defaultCenter = { lat: 37.5666791, lng: 126.9783589 };
+  const defaultCenter = { lat: 0, lng: 0 };
 
   const handleMarkerDragEnd = (
     polygonId: string,
@@ -351,7 +344,13 @@ export default function CustomGoogleMap() {
       mainPolygonCoords.push(mainPolygonCoords[0]);
     }
     let mainPolygonGeoJSON = turf.polygon([mainPolygonCoords]);
+    console.log("mainPolygonGeoJSON", mainPolygonGeoJSON);
+    // Step 2: Create a grid for the main polygon
+    const bboxMain = turf.bbox(mainPolygonGeoJSON);
+    // const grid = turf.pointGrid(turf.bbox(freeSpace), cellSize, { units: 'meters' });
 
+    // const gridMain = turf.pointGrid(bboxMain, density , { units: "meters" });
+    // console.log("gridMain", gridMain);
     // Step 2: Convert obstacles to GeoJSON
     const obstaclePolygonsGeoJSON = polygon.obstructors.map((obstructor) => {
       let obstructorCoords = obstructor.paths.map((coord) => [
@@ -382,6 +381,7 @@ export default function CustomGoogleMap() {
       return [];
     }
     console.log("freeSpace", freeSpace);
+
     // Step 4: Rotate the free space and work in rotated coordinates
     const pivot = turf.centroid(freeSpace);
     const rotatedFreeSpace = turf.transformRotate(freeSpace, angle, {
@@ -390,7 +390,9 @@ export default function CustomGoogleMap() {
 
     // Step 5: Generate equally spaced lines across the rotated polygon
     const spacing = density; // Spacing between lines in meters
-    const bbox = turf.bbox(rotatedFreeSpace);
+    console.log("rotatedFreeSpace", rotatedFreeSpace);
+    const bbox = turf.bbox(mainPolygonGeoJSON);
+    console.log("bbox2", bbox);
     const lineDistance = turf.distance(
       turf.point([bbox[0], bbox[1]]),
       turf.point([bbox[0], bbox[3]]),
@@ -398,12 +400,15 @@ export default function CustomGoogleMap() {
     );
     const numLines = Math.floor(lineDistance / spacing);
     console.log("numLines", numLines);
+    const extendFactor = 0.1; // Extend lines by 10% on each side
+
     const lines = [];
     for (let i = 0; i <= numLines; i++) {
       const y = bbox[1] + (i / numLines) * (bbox[3] - bbox[1]);
+      const xExtension = (bbox[2] - bbox[0]) * extendFactor;
       const line = turf.lineString([
-        [bbox[0], y],
-        [bbox[2], y],
+        [bbox[0] - xExtension, y],
+        [bbox[2] + xExtension, y],
       ]);
       lines.push(line);
     }
@@ -411,11 +416,25 @@ export default function CustomGoogleMap() {
     console.log("rotatedFreeSpace", rotatedFreeSpace);
     // Step 6: Clip lines to the rotated free space polygon
     const clippedLines = lines.map((line) =>
-      turf.lineIntersect(line, rotatedFreeSpace)
+      turf.lineIntersect(line, mainPolygonGeoJSON)
     );
-    console.log("clippedLines", clippedLines);
-    // Step 7: Generate points along the clipped lines
 
+    console.log("clippedLines", clippedLines, polygon.obstructors);
+    // polygon.obstructors.forEach((obstructor) => {
+    //   const paths = obstructor.paths.map((path) =>
+    //     turf.point([path.lng, path.lat])
+    //   );
+    //   const feature = turf.featureCollection(paths);
+    //   clippedLines.push(feature);
+    // });
+
+    // Step 7: Generate points along the clipped lines
+    // polygon.obstructors.forEach((obstructor) => {
+    //   obstructor.paths.forEach((path) => {
+    //     clippedLines.push(turf.point([path.lng, path.lat]));
+    //   });
+    // });
+    console.log("clippedLines2", clippedLines);
     const points = [];
     clippedLines.forEach((clippedLine, index) => {
       if (clippedLine.features.length > 0) {
@@ -433,39 +452,45 @@ export default function CustomGoogleMap() {
         });
       }
     });
-    polygon.obstructors.forEach((obstructor) => {
-      obstructor.paths.forEach((path) => {
-        points.push(turf.point([path.lng, path.lat]));
-      });
-    });
+
     console.log("points", points);
     // Step 8: Adjust path for obstacles using pathfinding when necessary
     const adjustedPath = [];
     for (let i = 0; i < points.length - 1; i++) {
       const start = points[i];
       const end = points[i + 1];
-      const distance = turf.distance(start, end, { units: "meters" });
-      if (distance > spacing * 1.5) {
-        // Obstacle likely between points, use pathfinding
-        const pathSegment = findPathWithAStar(
-          rotatedFreeSpace,
-          start,
-          end,
-          spacing / 2
-        );
-        adjustedPath.push(...pathSegment);
-      } else {
-        adjustedPath.push(start);
-      }
+
+      // Create a line between start and end points
+      const line = turf.lineString([
+        start.geometry.coordinates,
+        end.geometry.coordinates,
+      ]);
+
+      let options = {
+        obstacles: turf.polygon([
+          [
+            [1.351318, 0.241699],
+            [1.318359, 0.527336],
+            [1.658936, 0.538322],
+            [1.889648, 0.340574],
+            [1.351318, 0.241699],
+          ],
+        ]).geometry,
+      };
+      const newPath = turf.shortestPath(start, end, options);
+      console.log("newPath", newPath);
+     
+
+      adjustedPath.push(start);
+      console.log(`line ${i}  `, line);
     }
     // Add the last point
     adjustedPath.push(points[points.length - 1]);
-
+    
     // Step 9: Rotate adjusted path back to original coordinates
-    // const finalPoints = adjustedPath.map((point) =>
-    //   turf.transformRotate(point, -angle, { pivot: pivot.geometry.coordinates })
-    // );
-    const finalPoints = adjustedPath;
+    const finalPoints = adjustedPath.map((point) =>
+      turf.transformRotate(point, -angle, { pivot: pivot.geometry.coordinates })
+    );
 
     // Step 10: Convert points back to LatLngLiteral
     const windingPath = finalPoints.map((point) => ({
@@ -482,6 +507,7 @@ export default function CustomGoogleMap() {
     endPoint: turf.Feature<turf.Point>,
     cellSize: number
   ): turf.Feature<turf.Point>[] => {
+    console.log("findPathWithAStar", polygon, startPoint, endPoint, cellSize);
     // Create a grid for pathfinding
     const bbox = turf.bbox(polygon);
     const xCells = Math.max(2, Math.ceil((bbox[2] - bbox[0]) / cellSize));
@@ -554,7 +580,7 @@ export default function CustomGoogleMap() {
     setPolygons(
       polygons.map((polygon) => {
         if (polygon.id === polygonId) {
-          const density = 10; // Adjust this value to change the spacing between lines (in meters)
+          const density = 30000; // Adjust this value to change the spacing between lines (in meters)
           const windingPath = generateWindingPath(polygon, angle, density);
           return { ...polygon, windingPath };
         }
