@@ -527,21 +527,25 @@ const Inside = ({ map }: { map: google.maps.Map | null }) => {
         console.log("end =", end);
         console.log("options =", options);
         const newPath = turf.shortestPath(start, end, options);
-        // Check if the path is a LineString or MultiLineString
-        let coordsArray = [];
-        if (newPath.geometry.type === "LineString") {
-          coordsArray = newPath.geometry.coordinates;
-        } else if (newPath.geometry.type === "MultiLineString") {
-          // Flatten the coordinates array for MultiLineString
-          coordsArray = newPath.geometry.coordinates.flat();
-        }
 
-        // Convert coordinates to points and add to adjustedPath
-        coordsArray.forEach((coord) => {
+        // Extract coordinates from the path
+        let coordsArray =
+          newPath.geometry.type === "LineString"
+            ? newPath.geometry.coordinates
+            : newPath.geometry.coordinates.flat();
+
+        // Simplify the path to create a straighter line
+        const simplifiedPath = turf.simplify(turf.lineString(coordsArray), {
+          tolerance: 0.0005, // Adjust this value to control the level of simplification
+          highQuality: true,
+        });
+
+        // Convert simplified coordinates to points and add to adjustedPath
+        simplifiedPath.geometry.coordinates.forEach((coord) => {
           adjustedPath.push(turf.point(coord));
         });
       } else {
-        // If no path is found, use the direct line
+        // If no intersection, use the direct line
         adjustedPath.push(start);
         adjustedPath.push(end);
       }
