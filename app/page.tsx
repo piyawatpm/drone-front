@@ -54,10 +54,10 @@ export default function CustomGoogleMap() {
 
   const [map, setMap] = useState<google.maps.Map | null>(null);
   const onLoad = useCallback((map: google.maps.Map) => {
-    map.setZoom(13);
+    map.setZoom(17);
     setMap(map);
   }, []);
-  const defaultCenter = { lat: -23.286771753951715, lng: 116.29644162783606 };
+  const defaultCenter = { lat: -33.8688, lng: 151.2093 };
 
   const onUnmount = useCallback(() => setMap(null), []);
 

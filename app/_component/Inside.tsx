@@ -11,62 +11,53 @@ const Inside = ({ map }: { map: google.maps.Map | null }) => {
       name: "Polygon 2",
       paths: [
         {
-          lat: -23.286771753951715,
-          lng: 116.29644162783606,
+          lat: -33.8688,
+          lng: 151.2093,
         },
         {
-          lat: -23.263630326708974,
-          lng: 116.29784115993876,
+          lat: -33.8688,
+          lng: 151.2134,
         },
         {
-          lat: -23.264658919950605,
-          lng: 116.32611170841407,
+          lat: -33.8654,
+          lng: 151.2134,
         },
         {
-          lat: -23.288057270896086,
-          lng: 116.31939395432096,
+          lat: -33.8654,
+          lng: 151.2093,
+        },
+        {
+          lat: -33.8688,
+          lng: 151.2093,
         },
       ],
       completed: true,
       obstructors: [
         {
-          id: "1729995367950",
-          name: "Obstructor 1729995367950",
+          id: "1730087124421",
           paths: [
             {
-              lat: -23.273303,
-              lng: 116.305826,
+              lat: -33.86738801908181,
+              lng: 151.2108127657412,
             },
             {
-              lat: -23.271277,
-              lng: 116.304409,
+              lat: -33.866657521364594,
+              lng: 151.2106411043805,
             },
             {
-              lat: -23.269107,
-              lng: 116.304094,
+              lat: -33.86609628106762,
+              lng: 151.2115423265242,
             },
             {
-              lat: -23.267949,
-              lng: 116.306771,
-            },
-            {
-              lat: -23.268239,
-              lng: 116.309607,
-            },
-            {
-              lat: -23.271133,
-              lng: 116.310552,
-            },
-            {
-              lat: -23.272941,
-              lng: 116.309213,
+              lat: -33.866710972629036,
+              lng: 151.2117139878849,
             },
           ],
         },
       ],
     },
   ]);
-
+  console.log("polygons", polygons);
   const [angle, setAngle] = useState<number>(0);
   const [editingPolygonId, setEditingPolygonId] = useState<string | null>(null);
   const [selectedPolygonId, setSelectedPolygonId] = useState<string | null>(
@@ -451,61 +442,24 @@ const Inside = ({ map }: { map: google.maps.Map | null }) => {
         start.geometry.coordinates,
         end.geometry.coordinates,
       ]);
-      //   [
-      //     [-23.279833765424698, 116.30631215601586],
-      //     [-23.2758915654403, 116.30614049465622],
-      //     [-23.273368496214175, 116.31077535136673],
-      //     [-23.2758915654403, 116.3119769808843],
-      //     [-23.279833765424698, 116.30631215601586],
-      //   ],
-      // let options = {
-      //     units: "meters",
-      //     resolution: 3000,
-      //     obstacles: turf.polygon([
-      //       [
-      // [1.351318, 0.241699],
-      // [1.318359, 0.527336],
-      // [1.658936, 0.538322],
-      // [1.889648, 0.340574],
-      // [1.351318, 0.241699],
-      //       ],
-      //     ]).geometry,
-      //   };
 
-      //   const test1 = turf.polygon([
-      //     [
-      //       [-23.279833765424698, 116.30631215601586],
-      //       [-23.2758915654403, 116.30614049465622],
-      //       [-23.273368496214175, 116.31077535136673],
-      //       [-23.2758915654403, 116.3119769808843],
-      //       [-23.279833765424698, 116.30631215601586],
-      //     ],
-      //   ]);
-      //   const test2 = turf.polygon([
-      //     [
-      //       [1.351318, 0.241699],
-      //       [1.318359, 0.527336],
-      //       [1.658936, 0.538322],
-      //       [1.889648, 0.340574],
-      //       [1.351318, 0.241699],
-      //     ],
-      //   ]);
-      //   console.log("test1", test1);
-      //   console.log("test2", test2);
       const scaleFactor = 1;
-      const obstaclePolygon = turf.polygon([
-        [
-          [116.305826, -23.273303],
-          [116.304409, -23.271277],
-          [116.304094, -23.269107],
-          [116.306771, -23.267949],
-          [116.309607, -23.268239],
-          [116.310552, -23.271133],
-          [116.309213, -23.272941],
-          [116.305826, -23.273303],
-        ],
-      ]);
+      const obstaclesCollection = turf.featureCollection(
+        polygon.obstructors.map((obstructor) => {
+          const coords = obstructor.paths.map((path) => [path.lng, path.lat]);
+          // Close the polygon if not already closed
+          if (
+            coords[0][0] !== coords[coords.length - 1][0] ||
+            coords[0][1] !== coords[coords.length - 1][1]
+          ) {
+            coords.push(coords[0]);
+          }
+          return turf.polygon([coords]);
+        })
+      );
 
+      const obstaclePolygon = obstaclePolygonsGeoJSON[0];
+      console.log("obstaclePolygon", obstaclePolygon);
       const scaledObstaclePolygon = turf.transformScale(
         obstaclePolygon,
         scaleFactor
@@ -513,8 +467,8 @@ const Inside = ({ map }: { map: google.maps.Map | null }) => {
 
       const options = {
         units: "meters",
-        resolution: 2000,
-        obstacles: scaledObstaclePolygon.geometry,
+        resolution: 1000,
+        obstacles: obstaclesCollection,
       };
       const isIntersected = turf.booleanIntersects(
         line,
@@ -536,7 +490,7 @@ const Inside = ({ map }: { map: google.maps.Map | null }) => {
 
         // Simplify the path to create a straighter line
         const simplifiedPath = turf.simplify(turf.lineString(coordsArray), {
-          tolerance: 0.0005, // Adjust this value to control the level of simplification
+          tolerance: 0, // Adjust this value to control the level of simplification
           highQuality: true,
         });
 
@@ -544,6 +498,7 @@ const Inside = ({ map }: { map: google.maps.Map | null }) => {
         simplifiedPath.geometry.coordinates.forEach((coord) => {
           adjustedPath.push(turf.point(coord));
         });
+        console.log("simplifiedPath", simplifiedPath);
       } else {
         // If no intersection, use the direct line
         adjustedPath.push(start);
@@ -571,69 +526,6 @@ const Inside = ({ map }: { map: google.maps.Map | null }) => {
     return windingPath;
   };
 
-  const findPathWithAStar = (
-    polygon: turf.Feature<turf.Polygon | turf.MultiPolygon>,
-    startPoint: turf.Feature<turf.Point>,
-    endPoint: turf.Feature<turf.Point>,
-    cellSize: number
-  ): turf.Feature<turf.Point>[] => {
-    console.log("findPathWithAStar", polygon, startPoint, endPoint, cellSize);
-    // Create a grid for pathfinding
-    const bbox = turf.bbox(polygon);
-    const xCells = Math.max(2, Math.ceil((bbox[2] - bbox[0]) / cellSize));
-    const yCells = Math.max(2, Math.ceil((bbox[3] - bbox[1]) / cellSize));
-
-    const matrix = [];
-    for (let y = 0; y < yCells; y++) {
-      const row = [];
-      for (let x = 0; x < xCells; x++) {
-        const xCoord = bbox[0] + (x / (xCells - 1)) * (bbox[2] - bbox[0]);
-        const yCoord = bbox[1] + (y / (yCells - 1)) * (bbox[3] - bbox[1]);
-        const cellCenter = turf.point([xCoord, yCoord]);
-        const isInside = turf.booleanPointInPolygon(cellCenter, polygon);
-        row.push(isInside ? 0 : 1); // 0 = walkable, 1 = blocked
-      }
-      matrix.push(row);
-    }
-    console.log("matrix", matrix);
-    const grid = new PF.Grid(matrix);
-    const finder = new PF.AStarFinder();
-
-    // Map points to grid coordinates
-    const epsilon = 1e-10; // Small value to prevent division by zero
-    const xScale = (coord) =>
-      Math.floor(
-        ((coord[0] - bbox[0]) / (bbox[2] - bbox[0] + epsilon)) * (xCells - 1)
-      );
-    const yScale = (coord) =>
-      Math.floor(
-        ((coord[1] - bbox[1]) / (bbox[3] - bbox[1] + epsilon)) * (yCells - 1)
-      );
-
-    const startX = xScale(startPoint.geometry.coordinates);
-    const startY = yScale(startPoint.geometry.coordinates);
-    const endX = xScale(endPoint.geometry.coordinates);
-    const endY = yScale(endPoint.geometry.coordinates);
-
-    const gridBackup = grid.clone();
-    const path = finder.findPath(startX, startY, endX, endY, gridBackup);
-
-    // Check if a path was found
-    if (path.length === 0) {
-      console.error("No path found between points.");
-      return [startPoint, endPoint];
-    }
-
-    // Convert grid path back to coordinates
-    const pathCoords = path.map(([x, y]) => {
-      const xCoord = bbox[0] + (x / (xCells - 1)) * (bbox[2] - bbox[0]);
-      const yCoord = bbox[1] + (y / (yCells - 1)) * (bbox[3] - bbox[1]);
-      return turf.point([xCoord, yCoord]);
-    });
-
-    return pathCoords;
-  };
-
   const isPointInPolygon = (
     point: google.maps.LatLngLiteral,
     polygon: google.maps.LatLngLiteral[]
@@ -650,7 +542,7 @@ const Inside = ({ map }: { map: google.maps.Map | null }) => {
     setPolygons(
       polygons.map((polygon) => {
         if (polygon.id === polygonId) {
-          const density = 200; // Adjust this value to change the spacing between lines (in meters)
+          const density = 40; // Adjust this value to change the spacing between lines (in meters)
           const windingPath = generateWindingPath(polygon, angle, density);
           return { ...polygon, windingPath };
         }
