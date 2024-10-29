@@ -31,6 +31,8 @@ interface MapPanelProps {
   editingObstructorId: string | null;
   setEditingObstructorId: (id: string | null) => void;
   onCreateWindingPath: (polygonId: string) => void;
+  onDensityChange: (density: number) => void;
+  currentDensity: number;
 }
 
 const MapPanel: React.FC<MapPanelProps> = ({
@@ -46,6 +48,8 @@ const MapPanel: React.FC<MapPanelProps> = ({
   editingObstructorId,
   setEditingObstructorId,
   onCreateWindingPath,
+  onDensityChange,
+  currentDensity,
 }) => {
   const handlePolygonClick = (id: string) => {
     console.log("click", id);
@@ -71,12 +75,32 @@ const MapPanel: React.FC<MapPanelProps> = ({
         </button>
       )}
       {selectedPolygonId && !editingPolygonId && (
-        <button
-          onClick={() => onCreateWindingPath(selectedPolygonId)}
-          className="w-full bg-yellow-500 text-white py-2 px-4 rounded mb-4 hover:bg-yellow-600 transition-colors"
-        >
-          Create Winding Path
-        </button>
+        <>
+          {" "}
+          <button
+            onClick={() => onCreateWindingPath(selectedPolygonId)}
+            className="w-full bg-yellow-500 text-white py-2 px-4 rounded mb-4 hover:bg-yellow-600 transition-colors"
+          >
+            Create Winding Path
+          </button>{" "}
+          <div className="mt-4">
+            <label
+              htmlFor="density-slider"
+              className="block text-sm font-medium text-gray-700 mb-2"
+            >
+              Path Density: {currentDensity}m
+            </label>
+            <input
+              id="density-slider"
+              type="range"
+              min="10"
+              max="100"
+              value={currentDensity}
+              onChange={(e) => onDensityChange(parseInt(e.target.value))}
+              className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
+            />
+          </div>
+        </>
       )}
       <ul className="space-y-4">
         {polygons.map((polygon) => (

@@ -70,6 +70,7 @@ const Inside = ({ map }: { map: google.maps.Map | null }) => {
   const [showWindingPath, setShowWindingPath] = useState<string | null>(null);
 
   const windingPathRef = useRef<google.maps.Polyline | null>(null);
+  const [density, setDensity] = useState<number>(40);
 
   useEffect(() => {
     if (map && showWindingPath) {
@@ -93,7 +94,7 @@ const Inside = ({ map }: { map: google.maps.Map | null }) => {
           geodesic: true,
           strokeColor: "blue",
           strokeOpacity: 1.0,
-          strokeWeight: 5,
+          strokeWeight: 3,
           map: map,
         });
       }
@@ -144,6 +145,7 @@ const Inside = ({ map }: { map: google.maps.Map | null }) => {
       );
     }
   };
+
   map?.addListener("click", handleMapClickForPolygon);
 
   const handleAddObstructor = (polygonId: string) => {
@@ -467,7 +469,7 @@ const Inside = ({ map }: { map: google.maps.Map | null }) => {
 
       const options = {
         units: "meters",
-        resolution: 1000,
+        resolution: 100,
         obstacles: obstaclesCollection,
       };
       const isIntersected = turf.booleanIntersects(
@@ -490,7 +492,7 @@ const Inside = ({ map }: { map: google.maps.Map | null }) => {
 
         // Simplify the path to create a straighter line
         const simplifiedPath = turf.simplify(turf.lineString(coordsArray), {
-          tolerance: 0, // Adjust this value to control the level of simplification
+          tolerance: 0.0001, // Adjust this value to control the level of simplification
           highQuality: true,
         });
 
@@ -538,11 +540,11 @@ const Inside = ({ map }: { map: google.maps.Map | null }) => {
     );
   };
 
+  // Update handleCreateWindingPath to use the density state
   const handleCreateWindingPath = (polygonId: string) => {
     setPolygons(
       polygons.map((polygon) => {
         if (polygon.id === polygonId) {
-          const density = 40; // Adjust this value to change the spacing between lines (in meters)
           const windingPath = generateWindingPath(polygon, angle, density);
           return { ...polygon, windingPath };
         }
@@ -552,6 +554,13 @@ const Inside = ({ map }: { map: google.maps.Map | null }) => {
     setShowWindingPath(polygonId);
   };
 
+  // Add density change handler
+  const handleDensityChange = (newDensity: number) => {
+    setDensity(newDensity);
+    if (showWindingPath) {
+      handleCreateWindingPath(showWindingPath);
+    }
+  };
   const handleAngleChange = (newAngle: number) => {
     setAngle(newAngle);
     if (showWindingPath) {
@@ -680,6 +689,8 @@ const Inside = ({ map }: { map: google.maps.Map | null }) => {
         editingObstructorId={editingObstructorId}
         setEditingObstructorId={setEditingObstructorId}
         onCreateWindingPath={handleCreateWindingPath}
+        onDensityChange={handleDensityChange}
+        currentDensity={density}
       />
     </>
   );
