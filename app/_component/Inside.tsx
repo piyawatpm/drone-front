@@ -54,6 +54,23 @@ const Inside = ({ map }: { map: google.maps.Map | null }) => {
             },
           ],
         },
+        {
+          id: "1730265292832",
+          paths: [
+            {
+              lat: -33.868119,
+              lng: 151.21166,
+            },
+            {
+              lat: -33.867415,
+              lng: 151.21166,
+            },
+            {
+              lat: -33.867432,
+              lng: 151.212719,
+            },
+          ],
+        },
       ],
     },
   ]);
@@ -70,7 +87,7 @@ const Inside = ({ map }: { map: google.maps.Map | null }) => {
   const [showWindingPath, setShowWindingPath] = useState<string | null>(null);
 
   const windingPathRef = useRef<google.maps.Polyline | null>(null);
-  const [density, setDensity] = useState<number>(50);
+  const [density, setDensity] = useState<number>(58);
 
   useEffect(() => {
     if (map && showWindingPath) {
@@ -309,7 +326,9 @@ const Inside = ({ map }: { map: google.maps.Map | null }) => {
       }
 
       // Create a Turf polygon
-      const obstructorPolygon = turf.polygon([obstructorCoords]);
+      const obstructorPolygon = turf.polygon([obstructorCoords], {
+        id: obstructor.id,
+      });
 
       // Scale the polygon
       const scaledObstructorPolygon = turf.transformScale(obstructorPolygon, 1);
@@ -318,7 +337,7 @@ const Inside = ({ map }: { map: google.maps.Map | null }) => {
     });
     const availablePoints = [];
     const nonScaledObstaclePolygonsGeoJSON = polygon.obstructors.map(
-      (obstructor: { paths: { lng: number; lat: number }[] }) => {
+      (obstructor) => {
         const obstructorCoords = obstructor.paths.map(
           (coord: { lng: number; lat: number }) => [coord.lng, coord.lat]
         );
@@ -344,7 +363,7 @@ const Inside = ({ map }: { map: google.maps.Map | null }) => {
         // Push every coord (after scale) as turf.point into availablePoints array
         scaledObstructorPolygon.geometry.coordinates[0].forEach((coord) => {
           console.log("before push", turf.point(coord));
-          availablePoints.push(turf.point(coord));
+          availablePoints.push(turf.point(coord, { id: obstructor.id }));
         });
 
         return scaledObstructorPolygon;
@@ -440,7 +459,7 @@ const Inside = ({ map }: { map: google.maps.Map | null }) => {
     console.log("points", points);
     // Step 8: Adjust path for obstacles using pathfinding when necessary
 
-    console.clear();
+    // console.clear();
     console.log("available points", availablePoints);
     const adjustedPath = [];
     console.log("middlePoint before", points);
@@ -488,17 +507,24 @@ const Inside = ({ map }: { map: google.maps.Map | null }) => {
       };
       const isIntersected = turf.booleanIntersects(
         line,
-        turf.featureCollection(obstaclePolygonsGeoJSON),
-        { ignoreSelfIntersections: true }
+        turf.featureCollection(obstaclePolygonsGeoJSON)
       );
 
       const findNearestValidPoint = (
         point: turf.Feature<turf.Point>,
         availablePoints: turf.Feature<turf.Point>[],
         obstacles: turf.FeatureCollection,
-        line: number
+        line: number,
+        intersectingObstacleId: string | null
       ): turf.Feature<turf.Point> | null => {
-        const sorted = availablePoints.sort((a, b) => {
+        const availablePointsWithObstacleId = availablePoints.filter(
+          (point) => point.properties.id === intersectingObstacleId
+        );
+        console.log(
+          "availablePointsWithObstacleId",
+          availablePointsWithObstacleId
+        );
+        const sorted = availablePointsWithObstacleId.sort((a, b) => {
           const distA = turf.distance(point, a);
           const distB = turf.distance(point, b);
           return distA - distB;
@@ -520,6 +546,20 @@ const Inside = ({ map }: { map: google.maps.Map | null }) => {
         return ans;
       };
       if (isIntersected) {
+        const intersectingObstacle = obstaclePolygonsGeoJSON.find(
+          (obstacle, index) => {
+            return turf.booleanIntersects(line, obstacle, {
+              ignoreSelfIntersections: true,
+            });
+          }
+        );
+        const intersectingObstacleId = intersectingObstacle
+          ? polygon.obstructors[
+              obstaclePolygonsGeoJSON.indexOf(intersectingObstacle)
+            ].id
+          : null;
+
+        console.log("Intersecting obstacle IDs:", intersectingObstacleId);
         console.log(
           "isIntersected at array",
           i,
@@ -530,7 +570,8 @@ const Inside = ({ map }: { map: google.maps.Map | null }) => {
           start,
           availablePoints,
           obstaclesCollection,
-          start.properties.line
+          start.properties.line,
+          intersectingObstacleId
         );
         console.log("middlePoint", middlePoint, points);
         points.splice(i + 1, 0, middlePoint);
