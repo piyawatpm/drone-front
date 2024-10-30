@@ -9,9 +9,9 @@ import {
   useJsApiLoader,
   Polyline,
 } from "@react-google-maps/api";
-import MapPanel from "./_component/MapPanel";
-import DraggableMarker from "./_component/DraggableMarker";
-import Inside from "./_component/Inside";
+import MapPanel from "../components/MapPanel";
+import DraggableMarker from "../components/DraggableMarker";
+import Inside from "../components/Inside";
 
 const libraries: Libraries = ["places", "marker", "geometry"];
 const mapContainerStyle = { width: "100%", height: "100%" };
