@@ -70,7 +70,7 @@ const Inside = ({ map }: { map: google.maps.Map | null }) => {
   const [showWindingPath, setShowWindingPath] = useState<string | null>(null);
 
   const windingPathRef = useRef<google.maps.Polyline | null>(null);
-  const [density, setDensity] = useState<number>(40);
+  const [density, setDensity] = useState<number>(50);
 
   useEffect(() => {
     if (map && showWindingPath) {
@@ -94,7 +94,7 @@ const Inside = ({ map }: { map: google.maps.Map | null }) => {
           geodesic: true,
           strokeColor: "blue",
           strokeOpacity: 1.0,
-          strokeWeight: 3,
+          strokeWeight: 0.5,
           map: map,
         });
       }
@@ -197,33 +197,6 @@ const Inside = ({ map }: { map: google.maps.Map | null }) => {
     setEditingPolygonId(id);
   };
 
-  const adjustObstructorPath = (
-    paths: google.maps.LatLngLiteral[],
-    spacing: number
-  ): google.maps.LatLngLiteral[] => {
-    if (paths.length < 2) return paths;
-
-    const adjustedPath: google.maps.LatLngLiteral[] = [paths[0]];
-    for (let i = 1; i < paths.length; i++) {
-      const start = paths[i - 1];
-      const end = paths[i];
-      const distance = google.maps.geometry.spherical.computeDistanceBetween(
-        new google.maps.LatLng(start),
-        new google.maps.LatLng(end)
-      );
-      const numPoints = Math.floor(distance / (spacing * 111111)) + 1;
-
-      for (let j = 1; j <= numPoints; j++) {
-        const fraction = j / numPoints;
-        const lat = start.lat + (end.lat - start.lat) * fraction;
-        const lng = start.lng + (end.lng - start.lng) * fraction;
-        adjustedPath.push({ lat, lng });
-      }
-    }
-
-    return adjustedPath;
-  };
-
   const handleFinishPolygon = () => {
     if (editingPolygonId) {
       setPolygons(
@@ -294,6 +267,7 @@ const Inside = ({ map }: { map: google.maps.Map | null }) => {
     angle: number,
     density: number
   ): google.maps.LatLngLiteral[] => {
+    console.count("generateWindingPath");
     // Step 1: Convert main polygon to GeoJSON
     const mainPolygonCoords = polygon.paths.map((coord) => [
       coord.lng,
@@ -318,8 +292,7 @@ const Inside = ({ map }: { map: google.maps.Map | null }) => {
     // console.log("gridMain", gridMain);
     // Step 2: Convert obstacles to GeoJSON
 
-    const scaleFactor = 1; // Adjust this value to scale up (>1) or down (<1)
-
+    const scaleFactor = 1.1; // Adjust this value to scale up (>1) or down (<1)
     const obstaclePolygonsGeoJSON = polygon.obstructors.map((obstructor) => {
       let obstructorCoords = obstructor.paths.map((coord) => [
         coord.lng,
@@ -339,17 +312,49 @@ const Inside = ({ map }: { map: google.maps.Map | null }) => {
       const obstructorPolygon = turf.polygon([obstructorCoords]);
 
       // Scale the polygon
-      const scaledObstructorPolygon = turf.transformScale(
-        obstructorPolygon,
-        scaleFactor
-      );
+      const scaledObstructorPolygon = turf.transformScale(obstructorPolygon, 1);
 
       return scaledObstructorPolygon;
     });
+    const availablePoints = [];
+    const nonScaledObstaclePolygonsGeoJSON = polygon.obstructors.map(
+      (obstructor: { paths: { lng: number; lat: number }[] }) => {
+        const obstructorCoords = obstructor.paths.map(
+          (coord: { lng: number; lat: number }) => [coord.lng, coord.lat]
+        );
+        if (
+          obstructorCoords[0][0] !==
+            obstructorCoords[obstructorCoords.length - 1][0] ||
+          obstructorCoords[0][1] !==
+            obstructorCoords[obstructorCoords.length - 1][1]
+        ) {
+          // Close the polygon if not already closed
+          obstructorCoords.push(obstructorCoords[0]);
+        }
+
+        // Create a Turf polygon
+        const obstructorPolygon = turf.polygon([obstructorCoords]);
+
+        // Scale the polygon
+        const scaledObstructorPolygon = turf.transformScale(
+          obstructorPolygon,
+          scaleFactor
+        );
+
+        // Push every coord (after scale) as turf.point into availablePoints array
+        scaledObstructorPolygon.geometry.coordinates[0].forEach((coord) => {
+          console.log("before push", turf.point(coord));
+          availablePoints.push(turf.point(coord));
+        });
+
+        return scaledObstructorPolygon;
+      }
+    );
+    console.log("availablePoints", availablePoints);
     console.log("obstaclePolygonsGeoJSON", obstaclePolygonsGeoJSON);
     // Step 3: Subtract obstacles from main polygon
     let freeSpace = mainPolygonGeoJSON;
-    obstaclePolygonsGeoJSON.forEach((obstacle) => {
+    nonScaledObstaclePolygonsGeoJSON.forEach((obstacle) => {
       freeSpace = turf.difference(
         turf.featureCollection([freeSpace, obstacle])
       );
@@ -427,24 +432,33 @@ const Inside = ({ map }: { map: google.maps.Map | null }) => {
           coords.reverse();
         }
         coords.forEach((coord) => {
-          points.push(turf.point(coord));
+          points.push(turf.point(coord, { line: index }));
         });
       }
     });
 
     console.log("points", points);
     // Step 8: Adjust path for obstacles using pathfinding when necessary
+
+    console.clear();
+    console.log("available points", availablePoints);
     const adjustedPath = [];
+    console.log("middlePoint before", points);
+
+    let targetAfterObstacle = null;
+    let usedPointCurrentLine = [];
+
+    // loop through points
     for (let i = 0; i < points.length - 1; i++) {
       const start = points[i];
       const end = points[i + 1];
-
+      console.log("start,end", { start, end });
       // Create a line between start and end points
       const line = turf.lineString([
         start.geometry.coordinates,
         end.geometry.coordinates,
       ]);
-
+      console.log("check line ", line);
       const scaleFactor = 1;
       const obstaclesCollection = turf.featureCollection(
         polygon.obstructors.map((obstructor) => {
@@ -461,52 +475,159 @@ const Inside = ({ map }: { map: google.maps.Map | null }) => {
       );
 
       const obstaclePolygon = obstaclePolygonsGeoJSON[0];
-      console.log("obstaclePolygon", obstaclePolygon);
-      const scaledObstaclePolygon = turf.transformScale(
-        obstaclePolygon,
-        scaleFactor
-      );
+
+      // const scaledObstaclePolygon = turf.transformScale(
+      //   obstaclePolygon,
+      //   scaleFactor
+      // );
 
       const options = {
         units: "meters",
-        resolution: 100,
+        resolution: 1500,
         obstacles: obstaclesCollection,
       };
       const isIntersected = turf.booleanIntersects(
         line,
-        turf.featureCollection(obstaclePolygonsGeoJSON)
+        turf.featureCollection(obstaclePolygonsGeoJSON),
+        { ignoreSelfIntersections: true }
       );
-      console.log("isIntersected", isIntersected);
 
+      const findNearestValidPoint = (
+        point: turf.Feature<turf.Point>,
+        availablePoints: turf.Feature<turf.Point>[],
+        obstacles: turf.FeatureCollection,
+        line: number
+      ): turf.Feature<turf.Point> | null => {
+        const sorted = availablePoints.sort((a, b) => {
+          const distA = turf.distance(point, a);
+          const distB = turf.distance(point, b);
+          return distA - distB;
+        });
+        console.log("usedPointCurrentLine", usedPointCurrentLine);
+        const filtered = sorted.filter(
+          (p) =>
+            !usedPointCurrentLine.some(
+              (point) =>
+                point.geometry.coordinates[0] === p.geometry.coordinates[0] &&
+                point.geometry.coordinates[1] === p.geometry.coordinates[1]
+            )
+        );
+
+        console.log("available after filter", filtered, points);
+        const ans = filtered[0];
+        ans.properties.line = line;
+        usedPointCurrentLine.push(ans);
+        return ans;
+      };
       if (isIntersected) {
-        console.log("start =", start);
-        console.log("end =", end);
-        console.log("options =", options);
-        const newPath = turf.shortestPath(start, end, options);
-
-        // Extract coordinates from the path
-        let coordsArray =
-          newPath.geometry.type === "LineString"
-            ? newPath.geometry.coordinates
-            : newPath.geometry.coordinates.flat();
-
-        // Simplify the path to create a straighter line
-        const simplifiedPath = turf.simplify(turf.lineString(coordsArray), {
-          tolerance: 0.0001, // Adjust this value to control the level of simplification
-          highQuality: true,
-        });
-
-        // Convert simplified coordinates to points and add to adjustedPath
-        simplifiedPath.geometry.coordinates.forEach((coord) => {
-          adjustedPath.push(turf.point(coord));
-        });
-        console.log("simplifiedPath", simplifiedPath);
+        console.log(
+          "isIntersected at array",
+          i,
+          line,
+          turf.featureCollection(obstaclePolygonsGeoJSON)
+        );
+        const middlePoint = findNearestValidPoint(
+          start,
+          availablePoints,
+          obstaclesCollection,
+          start.properties.line
+        );
+        console.log("middlePoint", middlePoint, points);
+        points.splice(i + 1, 0, middlePoint);
+        if (
+          !availablePoints.some(
+            (p) =>
+              p.geometry.coordinates[0] === end.geometry.coordinates[0] &&
+              p.geometry.coordinates[1] === end.geometry.coordinates[1]
+          )
+        ) {
+          targetAfterObstacle = end;
+        }
+        console.log("targetAfterObstacle", targetAfterObstacle);
+        i--;
       } else {
+        const calculateAngleBetweenLines = (line1, line2) => {
+          // Get coordinates
+          const [start1, end1] = line1.geometry.coordinates;
+          const [start2, end2] = line2.geometry.coordinates;
+
+          // Calculate bearings
+          const bearing1 = turf.bearing(turf.point(start1), turf.point(end1));
+          const bearing2 = turf.bearing(turf.point(start2), turf.point(end2));
+
+          // Calculate absolute difference
+          let angle = Math.abs(bearing2 - bearing1);
+
+          // Normalize to [0, 180]
+          if (angle > 180) {
+            angle = 360 - angle;
+          }
+
+          return angle;
+        };
+
+        const mockPrevious = {
+          type: "Feature",
+          properties: {},
+          geometry: {
+            type: "LineString",
+            coordinates: [
+              [151.21063567806965, -33.86685714285714],
+              [151.2105874602246, -33.86665195364748],
+            ],
+          },
+        };
+        const mockCurrent = {
+          type: "Feature",
+          properties: {},
+          geometry: {
+            type: "LineString",
+            coordinates: [
+              [151.2105874602246, -33.86665195364748],
+              [151.21077628754347, -33.86745550113641],
+            ],
+          },
+        };
+        if (end.properties.line !== start.properties.line) {
+          usedPointCurrentLine = [];
+        }
+        if (adjustedPath.length > 1) {
+          const previousLine = turf.lineString([
+            adjustedPath[adjustedPath.length - 2]?.geometry.coordinates,
+            adjustedPath[adjustedPath.length - 1]?.geometry.coordinates,
+          ]);
+          const currentLine = turf.lineString([
+            start.geometry.coordinates,
+            end.geometry.coordinates,
+          ]);
+          const angle = calculateAngleBetweenLines(previousLine, currentLine);
+          // turning 180 degree removed
+          console.log(
+            "piyawat current Point Array",
+            i,
+            JSON.parse(JSON.stringify(adjustedPath))
+          );
+          if (angle > 170) {
+            console.log("piyawat yes pop");
+            adjustedPath.pop();
+            adjustedPath.pop();
+            adjustedPath.push(adjustedPath[adjustedPath.length - 1]);
+            adjustedPath.push(end);
+          } else {
+            adjustedPath.push(start);
+            adjustedPath.push(end);
+          }
+
+          console.log("angle", angle);
+          // console.log("intersectionarttt", intersection);
+
+          // console.log("Intersection check", { previousLine, currentLine });
+        } else {
+          adjustedPath.push(start);
+          adjustedPath.push(end);
+        }
         // If no intersection, use the direct line
-        adjustedPath.push(start);
-        adjustedPath.push(end);
       }
-      console.log(`line ${i}  `, line);
     }
     // Add the last point if not already added
     if (!adjustedPath.includes(points[points.length - 1])) {
@@ -517,14 +638,13 @@ const Inside = ({ map }: { map: google.maps.Map | null }) => {
     const finalPoints = adjustedPath.map((point) =>
       turf.transformRotate(point, -angle, { pivot: pivot.geometry.coordinates })
     );
-    console.log("adjustedPath2", finalPoints);
 
     // Step 10: Convert points back to LatLngLiteral
     const windingPath = finalPoints.map((point) => ({
       lat: point.geometry.coordinates[1],
       lng: point.geometry.coordinates[0],
     }));
-
+    console.log("windingPath", windingPath);
     return windingPath;
   };
 
@@ -595,7 +715,7 @@ const Inside = ({ map }: { map: google.maps.Map | null }) => {
                 fillOpacity: 0.35,
                 strokeColor: "#49AEC2",
                 strokeOpacity: isSelected ? 0 : 1,
-                strokeWeight: 2,
+                strokeWeight: 0,
               }}
             />
             {polygon?.obstructors?.map((obstructor) => (

@@ -89,6 +89,15 @@ const MapPanel: React.FC<MapPanelProps> = ({
               className="block text-sm font-medium text-gray-700 mb-2"
             >
               Path Density: {currentDensity}m
+              <input
+                id="density-input"
+                type="number"
+                min="10"
+                max="100"
+                value={currentDensity}
+                onChange={(e) => onDensityChange(parseInt(e.target.value))}
+                className="w-10 h-10 border bg-blue-200 mx-5 font-bold"
+              />
             </label>
             <input
               id="density-slider"
