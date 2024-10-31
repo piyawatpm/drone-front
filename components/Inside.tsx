@@ -1,4 +1,9 @@
-import { Polygon, Polyline, useGoogleMap } from "@react-google-maps/api";
+import {
+  OverlayView,
+  Polygon,
+  Polyline,
+  useGoogleMap,
+} from "@react-google-maps/api";
 import React, { useState, useRef, useEffect, useCallback } from "react";
 import DraggableMarker from "./DraggableMarker";
 import MapPanel from "./MapPanel";
@@ -6,6 +11,7 @@ import * as turf from "@turf/turf";
 import { mockPolygons } from "@/utils/mockData";
 import useWindingPath from "@/hooks/useWindingPath";
 import usePolygons from "@/hooks/usePolygons";
+import { calculateDistance } from "@/utils/googleHelper";
 const lineSymbol = {
   path: "M 0,-1 0,1",
   strokeOpacity: 1,
@@ -64,7 +70,33 @@ const Inside = ({ map }: { map: google.maps.Map | null }) => {
   };
 
   // Update handleCreateWindingPath to use the density state
+  const renderDistanceOverlays = (polygon: PolygonData) => {
+    return polygon.paths.map((point, index) => {
+      console.log("point", point);
+      const nextPoint = polygon.paths[(index + 1) % polygon.paths.length];
+      const distance = calculateDistance(point, nextPoint);
 
+      // Calculate midpoint for overlay position
+      const midpoint = {
+        lat: (point.lat + nextPoint.lat) / 2,
+        lng: (point.lng + nextPoint.lng) / 2,
+      };
+
+      return (
+        <OverlayView
+          key={`distance-${polygon.id}-${index}`}
+          position={midpoint}
+          mapPaneName={OverlayView.OVERLAY_MOUSE_TARGET}
+        >
+          <div className="bg-black w-fit text-white px-2 py-1 rounded-md shadow-md text-sm font-medium  whitespace-nowrap">
+            {distance < 1000
+              ? `${Math.round(distance)}m`
+              : `${(distance / 1000).toFixed(2)}km`}
+          </div>
+        </OverlayView>
+      );
+    });
+  };
   return (
     <>
       {polygons.map((polygon) => {
@@ -90,11 +122,13 @@ const Inside = ({ map }: { map: google.maps.Map | null }) => {
               options={{
                 fillColor: isSelected ? "#DDA13E" : "#49AEC2",
                 fillOpacity: 0.35,
-                strokeColor: "#49AEC2",
+                strokeColor: "#ffffff",
                 strokeOpacity: isSelected ? 0 : 1,
-                strokeWeight: 0,
+                strokeWeight: 1,
               }}
             />
+            {isSelected && renderDistanceOverlays(polygon)}
+
             {polygon?.obstructors?.map((obstructor) => (
               <Polygon
                 key={obstructor.id}

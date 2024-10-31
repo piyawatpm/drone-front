@@ -71,9 +71,9 @@ const usePolygons = ({ map }: { map: google.maps.Map | null }) => {
         windingPathRef.current = new google.maps.Polyline({
           path: validCoordinates,
           geodesic: true,
-          strokeColor: "blue",
+          strokeColor: "yellow",
           strokeOpacity: 1.0,
-          strokeWeight: 0.5,
+          strokeWeight: 3,
           map: map,
         });
       }
