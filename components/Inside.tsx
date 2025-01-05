@@ -51,33 +51,6 @@ const Inside = ({ map }: { map: google.maps.Map | null }) => {
     polygons,
     setPolygons,
   });
-  useEffect(() => {
-    if (map) {
-      const glyphImg = document.createElement("img");
-      glyphImg.src =
-        "https://developers.google.com/maps/documentation/javascript/examples/full/images/google_logo_g.svg";
-
-      const glyphSvgPinElement = new google.maps.marker.PinElement({
-        glyph: glyphImg,
-      });
-
-      const glyphSvgMarkerView = new google.maps.marker.AdvancedMarkerElement({
-        map,
-        position: { lat: 37.425, lng: -122.07 },
-        content: glyphSvgPinElement.element,
-        title: "A marker using a custom SVG for the glyph.",
-      });
-
-      const marker = new google.maps.Marker({
-        position: { lat: -33.8688, lng: 151.2093 },
-        map,
-        title: "Marker in Sydney",
-      });
-      return () => {
-        marker.setMap(null);
-      };
-    }
-  }, [map]);
 
   const handleMarkerDragEnd = (
     polygonId: string,
